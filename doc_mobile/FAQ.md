@@ -19,7 +19,10 @@ Not every API is supported on mobile, the main reason for this being that the mo
 
 - `child_process.spawn()`, `child_process.fork()` and other APIs that create new processes will run into permission issues
 - `process.exit()` is not allowed by the Apple App Store guildelines
-- `os.cpus()` may return inconsistent/unreliable results, since different OS versions will have different permissions for accessing CPU information
+- `os.cpus()` returns unreliable or no data on mobile:
+  - **iOS**: CPU speed values are always 0.
+  - **Android 8.0+**: the call returns `undefined` (the OS no longer exposes per-core frequency to apps).
+  - **Android < 8.0**: values can be inconsistent — some devices power cores on and off as an energy-saving strategy, so a core that is off at the moment of the call reports zero.
 - `os.availableParallelism()`
 
 A few other general JavaScript APIs are also unsupported due to Node.js Mobile not including full internationalization support:
