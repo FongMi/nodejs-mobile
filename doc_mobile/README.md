@@ -29,10 +29,8 @@ the orientation + task playbooks — then dive into the doc for your task below.
   (see below).
 
 ## Testing
-- [TEST_PLAN.md](./TEST_PLAN.md) — the CI test strategy and the pre-release
-  **gate**: the tiered smoke → curated `test/parallel` subset → real-device ladder.
-- [TESTING.md](./TESTING.md) — manual how-to for running the upstream test suite
-  on a physical device via the proxy harness.
+- [TESTING.md](./TESTING.md) — how the test harness works, what CI runs, and how
+  to run the tests locally on an Android emulator, an iOS simulator, or a device.
 
 ## The lite variant
 
@@ -80,3 +78,5 @@ living docs:
 - [V24_AUDIT_REPORT.md](./V24_AUDIT_REPORT.md) — per-file audit of the import.
 - [UPGRADE_BLOCKERS_v24.md](./UPGRADE_BLOCKERS_v24.md) — the upgrade blockers + fixes.
 - [RELEASE_PLAN_v24.md](./RELEASE_PLAN_v24.md) — the v24 release plan.
+- [TEST_PLAN.md](./TEST_PLAN.md) — the pre-release test strategy (its substance
+  folds into [TESTING.md](./TESTING.md) once each tier has a green run).

@@ -1,59 +1,58 @@
 # Build Instructions
 
-## Prerequisites to build the Android library on Linux Ubuntu/Debian:
+nodejs-mobile builds one native library per target, and **each target builds on
+one host OS only:**
 
-### Basic build tools:
-```sh
-sudo apt-get install -y build-essential git python gcc-multilib g++-multilib
-```
+| Target  | Output                       | Build host           |
+|---------|------------------------------|----------------------|
+| Android | `libnode.so` (per ABI)       | **Linux only**       |
+| iOS     | `NodeMobile.xcframework`     | **macOS only** (Xcode) |
 
-### Install Android NDK r27 for Linux:
+> **Why Android can't be built on macOS.** node's bundled gyp archives static
+> libs as GNU thin archives (`ar crsT … @file-list` response files) and links
+> the cross-build's *host* build-tools (e.g. `node_js2c`) with the ELF-linker
+> option `-Wl,--start-group`. Apple's `/usr/bin/ar` and `ld64` support neither,
+> so a macOS host fails — first at the archiver (`ar: @…ar-file-list: No such
+> file or directory`), and even with `AR_host` pointed at the NDK's `llvm-ar`,
+> then at the host link (`ld: unknown options: --start-group`). `--start-group`
+> is ELF-only and no Mach-O linker implements it, so there is no drop-in macOS
+> fix. This is a property of node's build system, not the mobile patches, and it
+> affects `full` and `lite` identically. Build Android on Linux (CI uses
+> `ubuntu-24.04`).
 
-Use the Android SDK Manager or Android Studio to install NDK version 27:
+## Python (both targets)
 
-```sh
-sdkmanager "ndk;27.2.12479018"
-```
-
-## Prerequisites to build the Android library on macOS:
-
-### Git:
-
-Run `git` in a terminal window, it will show a prompt to install it if not already present.
-As an alternative, installing one of these will install `git`:
-* Xcode, with the Command Line Tools.
-* [Homebrew](https://brew.sh/)
-* [Git-SCM](https://git-scm.com/download/mac)
-
-### Install Android NDK r27 for macOS:
-
-Use the Android SDK Manager or Android Studio to install NDK version 27:
+Both build paths run gyp / V8 code generation under Python. Use a **Python 3.13**
+(3.12 also works) venv with `setuptools` installed — gyp-next declares
+`setuptools` as a build-time dependency and a bare venv does not bundle it. CI
+does the same:
 
 ```sh
-sdkmanager "ndk;27.2.12479018"
+python3.13 -m venv .venv
+. .venv/bin/activate
+pip install setuptools
 ```
 
-## Building the Android library on Linux or macOS:
+---
 
-> **Build environment (important):**
-> - **Python 3.12** is required. Newer Python (3.13/3.14) breaks the V8 gyp code
->   generation; CI pins 3.12 in a venv with `setuptools` installed. Do the same
->   locally: `python3.12 -m venv .venv && . .venv/bin/activate && pip install setuptools`.
-> - **Build Android on Linux** (CI uses `ubuntu-24.04`). node's bundled gyp
->   archives static libs as GNU thin archives (`ar crsT … @file-list` response
->   files) and links the cross-build's *host* build-tools (e.g. `node_js2c`) with
->   the ELF-linker option `-Wl,--start-group`. Apple's `/usr/bin/ar` and `ld64`
->   support neither, so a macOS host fails — first at the archiver
->   (`ar: @…ar-file-list: No such file or directory`), and even with `AR_host`
->   pointed at the NDK's `llvm-ar`, then at the host link
->   (`ld: unknown options: --start-group`). `--start-group` is ELF-only and no
->   Mach-O linker implements it, so there is no drop-in macOS fix; build in a
->   Linux environment/container (this affects full and lite identically — it is a
->   property of node's build system, not of the mobile patches).
+## Android — build on Linux
 
-### 1) Clone this repo and check out the `mobile/v24` branch:
+### Prerequisites
 
-`main` is the legacy Node 18 line; the current Node 24 work lives on `mobile/v24`
+```sh
+sudo apt-get install -y build-essential git gcc-multilib g++-multilib
+```
+
+Install Android NDK **r27d** (`27.3.13750724`) via the SDK Manager (the
+`ubuntu-24.04` GitHub runner already ships an NDK 27 at `$ANDROID_NDK_LATEST_HOME`):
+
+```sh
+sdkmanager "ndk;27.3.13750724"
+```
+
+### 1) Clone and check out `mobile/v24`
+
+`main` is the legacy Node 18 line; current Node 24 work lives on `mobile/v24`
 (see [`MAINTENANCE_MODEL.md`](./MAINTENANCE_MODEL.md)).
 
 ```sh
@@ -62,71 +61,41 @@ cd nodejs-mobile
 git checkout mobile/v24
 ```
 
-### 2a) Using the Android helper script:
-
-The `tools/android_build.sh` script takes as first argument the Android NDK path (in our case is `~/AndroidSDK/ndk/27.2.12479018`). The second argument must be the Android SDK version as a two-digit number. The third argument is the target architecture, which can be one of the following: `arm`, `x86`, `arm64` or `x86_64`. You can omit the third argument, and it will build all available architectures.
-
-Run (example arguments):
+### 2) Build with the helper script
 
 ```sh
-./tools/android_build.sh ~/AndroidSDK/ndk/27.2.12479018 23
+./tools/android_build.sh <ndk-path> <sdk-version> [arch]
 ```
 
-When done, each built shared library will be placed in `out_android/$(ARCHITECTURE)/libnode.so`.
-
-### 2b) Configure and build manually:
-Run the `android-configure` script to configure the build with the path to the downloaded NDK and the desired target architecture.
+- `<ndk-path>` — the installed NDK, e.g. `~/Android/Sdk/ndk/27.3.13750724`
+- `<sdk-version>` — minimum Android SDK version as a number, e.g. `24`
+- `[arch]` — `arm`, `arm64`, or `x86_64`; omit to build all three.
 
 ```sh
-source ./android-configure ../AndroidSDK/ndk/27.2.12479018 arm
+./tools/android_build.sh ~/Android/Sdk/ndk/27.3.13750724 24
 ```
 
-Start the build phase:
+Output: `out_android/<abi>/libnode.so` for each ABI (`armeabi-v7a`, `arm64-v8a`,
+`x86_64`).
+
+To configure and build a single architecture manually instead:
+
 ```sh
+source ./android-configure <ndk-path> <sdk-version> <arch>
 make
+# -> out/Release/lib.target/libnode.so
 ```
 
-This will create the Android `armeabi-v7a` shared library in `out/Release/lib.target/libnode.so`.
+---
 
-## Prerequisites to build the iOS .framework library on macOS:
+## iOS — build on macOS
 
-### Xcode 11 with Command Line Tools
+### Prerequisites
 
-Install Xcode 11 or higher, from the App Store, and then install the Command Line Tools by running the following command:
+Xcode with the Command Line Tools (`xcode-select --install`, which also installs
+`git`).
 
-```sh
-xcode-select --install
-```
-
-That installs `git`, as well.
-
-### CMake
-
-To install `CMake`, you can use a package installer like [Homebrew](https://brew.sh/).
-
-First, install `HomeBrew`, if you don't have it already.
-
-```sh
-/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
-```
-
-Then, use it to install `CMake`:
-
-```sh
-brew install cmake
-```
-
-## Building the iOS library using CocoaPods:
-
-Add this to your `Podfile`:
-
-```ruby
-pod 'NodeMobile', :git => 'https://github.com/janeasystems/nodejs-mobile.git'
-```
-
-## Building the iOS .framework library on macOS:
-
-### 1) Clone this repo and check out the `mobile/v24` branch:
+### 1) Clone and check out `mobile/v24`
 
 ```sh
 git clone https://github.com/nodejs-mobile/nodejs-mobile
@@ -134,24 +103,26 @@ cd nodejs-mobile
 git checkout mobile/v24
 ```
 
-### 2) Run the helper script:
+### 2) Build with the helper script
 
 ```sh
-./tools/ios_framework_prepare.sh
+./tools/ios_framework_prepare.sh [arm64|arm64-simulator]
 ```
 
-That configures `gyp` to build Node.js and its dependencies as static libraries
-for iOS, with `v8` set to run jitless (Apple's no-JIT rule). It builds two
-arm64 slices — one for the device (`iphoneos`) and one for the simulator
-(`iphonesimulator`) — copying their static libs through
+With no argument it builds **both** arm64 slices — device (`iphoneos`) and
+simulator (`iphonesimulator`) — and combines them. The script configures gyp to
+build Node.js and its dependencies as static libraries with V8 set to run
+jitless (Apple's no-JIT rule), staging the libs through
 `tools/ios-framework/bin/` into the `tools/ios-framework/NodeMobile.xcodeproj`
-project. (x86_64/Intel-simulator support was dropped for v24: Intel Macs are EOL
-and Apple Silicon runs the arm64 simulator natively.)
+project. Pass `arm64` or `arm64-simulator` to build only one slice during
+development. (x86_64 / Intel-simulator support was dropped for v24: Intel Macs
+are EOL and Apple Silicon runs the arm64 simulator natively.)
 
-To build only one slice during development, pass `arm64` or `arm64-simulator`;
-with no argument it builds both and combines them. The output is an
-**`.xcframework`** bundling the device and simulator arm64 slices:
-`out_ios/NodeMobile.xcframework`.
+Output: **`out_ios/NodeMobile.xcframework`** (device + simulator arm64 slices).
 
-To build the size-reduced smaller binary instead of the default, set
+---
+
+## Lite flavor (both targets)
+
+To build the size-reduced binary instead of the default, set
 `NODEJS_MOBILE_FLAVOR=lite` (see the [lite variant](./README.md#the-lite-variant)).

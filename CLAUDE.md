@@ -39,8 +39,8 @@ doing the task, and **don't duplicate their content back into here**.
   (`process.execPath`) can't pass on Android and are excluded; a test that calls
   **`process.exit()`** is mis-scored by the current per-process harness (it exits
   via libc `exit()` before the verdict is written) — none are in the curated list.
-- → [`doc_mobile/TEST_PLAN.md`](./doc_mobile/TEST_PLAN.md) (strategy + gate),
-  [`doc_mobile/TESTING.md`](./doc_mobile/TESTING.md) (manual how-to)
+- → [`doc_mobile/TESTING.md`](./doc_mobile/TESTING.md) — CI test setup + how to
+  run tests locally. (TEST_PLAN.md is an ephemeral pre-release planning doc.)
 
 ## Playbook — fix a bug / make a change
 1. Branch from `mobile/v24`.

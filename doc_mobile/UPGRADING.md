@@ -83,28 +83,32 @@ tip of the branch.
 
 Before merging:
 
-- Run `tools/mobile-test/prepare-android-test.sh` then
-  `tools/mobile-test/node-android-proxy.sh tools/test.py` on at least one
-  arm64 Android device.
-- Run `tools/mobile-test/prepare-ios-tests.sh` then
-  `tools/mobile-test/node-ios-proxy.sh tools/test.py` on an arm64 iOS device
-  and on the iOS simulator.
+- Android: `tools/mobile-test/android/prepare-android-test.sh`, then run the
+  curated subset with `./tools/test.py --arch android` on an emulator or arm64
+  device.
+- iOS: `tools/mobile-test/ios/prepare-ios-sim-tests.sh` (simulator) or
+  `prepare-ios-tests.sh` (device), then `./tools/test.py --arch ios
+  --shell=./tools/mobile-test/ios/node-ios-sim-proxy.sh`.
+
+See [`TESTING.md`](./TESTING.md) for the full local-run instructions.
 
 Document any newly skipped tests by adding a `test,android: SKIP <test>` or
 `test,ios: SKIP <test>` patch to the stack.
 
-## 6. Merge
+## 6. Merge and release
+
+Fast-forward the rebased branch onto `mobile/v24` (linear history — no merge
+commit):
 
 ```sh
 git checkout mobile/v24
 git merge --ff-only mobile/v24-rebase-24.16.0
-git tag nodejs-mobile-24.16.0
-git push origin mobile/v24 nodejs-mobile-24.16.0
 ```
 
-Update `src/node_mobile_version.h` and `doc_mobile/CHANGELOG.md` as the last
-patch in the stack (or as a separate `release:` commit, by convention the
-final commit on the branch).
+**Do not tag or push a release by hand.** The version bump
+(`src/node_mobile_version.h`), the CHANGELOG entry, tagging, and publishing are
+handled by the guarded `prepare-release` / `publish-release` workflows — see
+[`RELEASING.md`](./RELEASING.md).
 
 ## Cross-major upgrades (e.g. v24 → v26)
 

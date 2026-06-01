@@ -1,5 +1,10 @@
 # Test plan: validating nodejs-mobile v24 on real mobile runtimes
 
+> **Ephemeral planning doc — delete before tagging a release.** This captures the
+> pre-release test *strategy*; the permanent dev-facing guide is
+> [`TESTING.md`](./TESTING.md). Remove this file once the test tiers have had a
+> green CI run and the v24 work is merge-ready.
+
 Last updated 2026-05-29. This is the **strategy** for proving the
 `mobile/v24` patch stack actually runs on Android and iOS before we tag a
 release. It complements two existing docs:
