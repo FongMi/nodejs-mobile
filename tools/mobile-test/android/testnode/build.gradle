@@ -1,0 +1,4 @@
+// Top-level build file for the Android test harness (doc_mobile/TEST_PLAN.md).
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}
