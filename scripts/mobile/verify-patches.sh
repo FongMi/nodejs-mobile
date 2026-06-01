@@ -20,7 +20,22 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)
 
 BASE_FILE="${REPO_ROOT}/doc_mobile/upstream-base.txt"
+if [ ! -f "${BASE_FILE}" ]; then
+  echo "error: ${BASE_FILE} is missing — cannot determine the patch-stack base." >&2
+  echo "       See doc_mobile/UPGRADING.md." >&2
+  exit 1
+fi
+# First non-comment, non-empty line, whitespace stripped — matches the parse in
+# export-patches.sh and .github/workflows/validate-patch-stack.yml.
 BASE=$(grep -Ev '^\s*(#|$)' "${BASE_FILE}" | head -n1 | tr -d '[:space:]')
+if [ -z "${BASE}" ]; then
+  echo "error: no base recorded in ${BASE_FILE}." >&2
+  exit 1
+fi
+if ! git -C "${REPO_ROOT}" rev-parse --verify --quiet "${BASE}^{commit}" >/dev/null; then
+  echo "error: patch-stack base '${BASE}' is not a valid commit in this repo." >&2
+  exit 1
+fi
 
 HEAD_TREE=$(git -C "${REPO_ROOT}" rev-parse 'HEAD^{tree}')
 

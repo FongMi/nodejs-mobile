@@ -61,8 +61,12 @@ if [ -n "$(git -C "${UPSTREAM_DIR}" status --porcelain)" ]; then
   exit 1
 fi
 
-# Abort any leftover am session from a previous failed run.
-git -C "${UPSTREAM_DIR}" am --abort >/dev/null 2>&1 || true
+# Clear a leftover git-am session from a previous failed run, but only if one is
+# actually in progress — a blind `am --abort` would silently mask an unrelated
+# in-progress sequencer operation (e.g. a rebase) and let the series apply on top.
+if [ -d "$(git -C "${UPSTREAM_DIR}" rev-parse --git-path rebase-apply)" ]; then
+  git -C "${UPSTREAM_DIR}" am --abort >/dev/null 2>&1 || true
+fi
 
 APPLIED=0
 while IFS= read -r patch; do

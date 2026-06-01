@@ -55,7 +55,11 @@ scripts/mobile/apply-patches.sh ./node-build ./mobile-patches-out
   `git am --3way --keep-cr --whitespace=nowarn`.
   - `--3way` lets git fall back to the blob context embedded in each patch so
     hunks whose line numbers drifted across minor upstream churn still merge,
-    while real conflicts still fail loudly.
+    while real conflicts still fail loudly. (The `--3way` fallback needs the
+    *original* base blobs in the object DB; on a `--depth 1` clone of a
+    **different** base than the recorded one it can fail with "could not build
+    fake ancestor". Cloning at the exact `upstream-base.txt` tag, as above,
+    avoids this — the patches then apply directly without the fallback.)
   - `--whitespace=nowarn` forces a byte-exact apply regardless of the
     caller's `apply.whitespace` git config. The common `apply.whitespace=fix`
     setting would otherwise silently strip trailing whitespace and mutate the
