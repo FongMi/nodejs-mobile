@@ -1,0 +1,149 @@
+name: iOS Simulator Tests
+
+# Runs the curated Tier 2 subset of the Node.js JS suite (doc_mobile/TEST_PLAN.md)
+# inside the testnode harness on a booted iOS simulator, via simctl. This gives
+# signal that the framework executes JS correctly on-device-like, beyond the
+# compile-only coverage of build-mobile.yml.
+#
+# Uses simctl (not ios-deploy, which is physical-device only). simctl launch
+# doesn't return the app's exit code, so the app writes the test's real exit code
+# to a per-launch verdict file in its sandbox that the proxy reads. A simulator
+# run builds the framework and the app and runs the subset serially (~20-30 min
+# of macos runner time), so it is gated behind a nightly cron, the 'mobile-test'
+# PR label, and workflow_dispatch.
+on:
+  schedule:
+    # 04:17 UTC nightly. Off the hour to avoid the cron-scheduler thundering herd.
+    - cron: '17 4 * * *'
+  # Only on an explicit 'mobile-test' label add (matches android-emulator-tests):
+  # the job reuses the Build workflow's libnode artifact, so it must run *after*
+  # Build is green for the commit, not on every push (synchronize would fire it
+  # before Build finishes and the artifact fetch would fail). NB: Build only runs
+  # on push to build-mobile.yml's branch globs (main, icu, mobile/**, claude/**)
+  # or its workflow_dispatch — so the head branch must match one of those (or
+  # Build must be dispatched for the SHA) or the artifact fetch below has nothing
+  # to find. workflow_dispatch on a matching branch is the simplest path.
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+env:
+  SCCACHE_GHA_ENABLED: 'true'
+
+permissions:
+  contents: read
+  # Needed to list/download the libnode artifact from the Build workflow run.
+  actions: read
+
+jobs:
+  ios-simulator-tests:
+    # On pull_request, only run when the 'mobile-test' label is present.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.label.name == 'mobile-test'
+
+    # Both flavors run the SAME curated list (true full-parity, no exclusions):
+    # verified all 151 pass on a local lite build despite iOS lite dropping the
+    # WebAssembly + Intl globals (--v8-lite-mode + intl=none) — the ICU tests
+    # self-skip via common.hasIntl and the WebAssembly-named test only inspects
+    # a string fixture. Each flavor fetches its own framework from the same
+    # matrix Build run (which produces both).
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [full, lite]
+
+    # macos-26 is Apple Silicon with current Xcode, matching build-mobile.yml.
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      NODEJS_MOBILE_FLAVOR: ${{ matrix.flavor }}
+      FLAVOR_SUFFIX: ${{ matrix.flavor == 'lite' && '-lite' || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: '0'
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      # Reuse the framework build-mobile.yml already produced for this commit
+      # instead of rebuilding (a from-scratch build is 1.5-3h and overruns the job
+      # timeout). build-mobile deletes the per-arch node-ios-* artifacts after
+      # combining, so pull the surviving combined artifact (nodejs-mobile-ios: the
+      # device+simulator NodeMobile.xcframework) and use it directly at the path
+      # the testnode project references. Requires a successful Build for this SHA.
+      - name: Fetch NodeMobile.xcframework from the latest Build run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          RUN=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow build-mobile.yml \
+                  --commit "$SHA" --status success --limit 1 --json databaseId -q '.[0].databaseId')
+          if [ -z "$RUN" ]; then
+            echo "::error::No successful Build run found for $SHA. Build only runs on push to its branch globs (main, icu, mobile/**, claude/**) or workflow_dispatch; dispatch/await Build for this SHA before the Tier-2 tests."
+            exit 1
+          fi
+          # The matrix Build produces both flavors in one run, so fetch this
+          # flavor's combined artifact (nodejs-mobile-ios[-lite]).
+          echo "Reusing ${NODEJS_MOBILE_FLAVOR} NodeMobile.xcframework from Build run $RUN"
+          gh run download "$RUN" --repo "$GITHUB_REPOSITORY" --name "nodejs-mobile-ios${FLAVOR_SUFFIX}" --dir nm-ios
+          mkdir -p out_ios
+          rm -rf out_ios/NodeMobile.xcframework
+          cp -R nm-ios/NodeMobile.xcframework out_ios/NodeMobile.xcframework
+          test -d out_ios/NodeMobile.xcframework \
+            || { echo "::error::NodeMobile.xcframework missing from nodejs-mobile-ios${FLAVOR_SUFFIX}"; ls -R nm-ios || true; exit 1; }
+
+      - name: Boot iPhone simulator
+        id: boot-sim
+        run: |
+          # Newest available iOS runtime + the highest-numbered iPhone device
+          # type. Picking the *last* iPhone in simctl's (unsorted) list can grab
+          # an old model the newest runtime doesn't support, failing
+          # `simctl create` with SimError 403.
+          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; rs=sorted([x for x in json.load(sys.stdin)['runtimes'] if x.get('platform')=='iOS' and x.get('isAvailable')], key=lambda x:[int(n) for n in x['version'].split('.')]); print(rs[-1]['identifier'] if rs else '')")
+          DEVICE_TYPE=$(xcrun simctl list devicetypes -j | python3 -c "import json,sys,re; ds=sorted([x for x in json.load(sys.stdin)['devicetypes'] if re.match(r'iPhone \d', x['name'])], key=lambda x:int(re.match(r'iPhone (\d+)', x['name']).group(1))); print(ds[-1]['identifier'] if ds else '')")
+          echo "Using device=$DEVICE_TYPE runtime=$RUNTIME"
+          test -n "$DEVICE_TYPE" && test -n "$RUNTIME"
+          UDID=$(xcrun simctl create "nodejs-mobile-test" "$DEVICE_TYPE" "$RUNTIME")
+          xcrun simctl bootstatus "$UDID" -b
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare tests on simulator
+        env:
+          DEVICE_ID: ${{ steps.boot-sim.outputs.udid }}
+        run: ./tools/mobile-test/ios/prepare-ios-sim-tests.sh
+
+      - name: Run curated JS subset on simulator
+        env:
+          DEVICE_ID: ${{ steps.boot-sim.outputs.udid }}
+        run: |
+          # Curated, deterministic subset (shared with the Android workflow).
+          # --timeout=300: test.py's per-test wall-clock budget (scaled by host
+          # arch) must exceed the proxy's 120s verdict poll so the PROXY is the
+          # authoritative deadline and emits its no-verdict diagnostic before
+          # test.py kills it.
+          grep -vE '^[[:space:]]*#|^[[:space:]]*$' tools/mobile-test/tier2-parallel-tests.txt \
+            | xargs ./tools/test.py -j 1 --flaky-tests=skip --timeout=300 \
+                --arch ios --shell="./tools/mobile-test/ios/node-ios-sim-proxy.sh"
+
+      # Native-addon gate: build the crc-native N-API addon against THIS build's
+      # framework (-framework NodeMobile -> two-level napi_* binding) and load it
+      # in the testnode app. Proves a real addon dlopens + runs (the "B-1"
+      # concern the symbol-grep smoke only approximates). Runs for both flavors.
+      - name: Build + run NAPI addon on simulator
+        run: |
+          ./tools/mobile-test/addon/build-ios-addon.sh \
+            out_ios/NodeMobile.xcframework ios-arm64-simulator nm-ios/include/node \
+            "$PWD/crcnative.node"
+          ./tools/mobile-test/addon/run-ios-addon.sh \
+            "$PWD/out_ios_testnode/Release-iphonesimulator/testnode.app" \
+            "${{ steps.boot-sim.outputs.udid }}" \
+            "$PWD/crcnative.node"
+
+      - name: Shutdown simulator
+        if: always()
+        run: |
+          xcrun simctl shutdown "${{ steps.boot-sim.outputs.udid }}" || true
+          xcrun simctl delete "${{ steps.boot-sim.outputs.udid }}" || true
