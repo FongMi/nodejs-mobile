@@ -26,14 +26,16 @@ fi
 echo "iOS build flavor: $FLAVOR"
 
 INTL="small-icu"
+# --v8-lite-mode drops the compiled JIT and the V8 native WASM engine. Both are
+# dead on iOS for EVERY flavor — iOS runs jitless (no JIT entitlement) and
+# WebAssembly is served by the polywasm JS shim — so apply it to full and lite
+# alike (it is the ~20MB lever). Threaded into both configure blocks below.
+V8_LITE_MODE="--v8-lite-mode"
 LITE_FLAGS=""
 if [ "$FLAVOR" = "lite" ]; then
   INTL="none"
-  # iOS lite: --v8-lite-mode is the ~20MB lever — it drops the compiled JIT and
-  # the V8 WASM engine, both already dead on iOS (runtime is jitless; undici's
-  # WASM is served by the polywasm JS shim). --without-{amaro,inspector,sqlite}
-  # are features size-constrained consumers can drop.
-  LITE_FLAGS="--without-amaro --without-inspector --without-sqlite --v8-lite-mode"
+  # lite additionally drops features size-constrained consumers don't need.
+  LITE_FLAGS="--without-amaro --without-inspector --without-sqlite"
 fi
 
 declare -a outputs_common=(
@@ -73,7 +75,6 @@ declare -a outputs_common=(
 #   libcrdtp                 -- --without-inspector
 #   libsqlite                -- --without-sqlite
 #   libicu*                  -- --with-intl=none (no ICU)
-#   libv8_initializers_slow  -- not built under --v8-lite-mode
 # NB: libv8_snapshot stays in outputs_common — it is the runtime isolate-setup
 # lib (setup-isolate-deserialize) linked by BOTH flavors. libv8_init
 # (setup-isolate-full) is only a dependency of the host mksnapshot tool and is
@@ -85,6 +86,10 @@ declare -a outputs_full_only=(
   "libicui18n.a"
   "libicustubdata.a"
   "libicuucx.a"
+)
+# Built by NEITHER flavor now: --v8-lite-mode (applied to both) drops the slow
+# isolate-initializers lib. Scrubbed from the pbxproj for every flavor below.
+declare -a outputs_v8_lite_dropped=(
   "libv8_initializers_slow.a"
 )
 declare -a outputs_x64_only=()
@@ -111,6 +116,7 @@ build_for_arm64_device() {
     --enable-static \
     --openssl-no-asm \
     --v8-options=--jitless \
+    $V8_LITE_MODE \
     --without-node-code-cache \
     --without-node-snapshot
   make -j$(getconf _NPROCESSORS_ONLN)
@@ -135,6 +141,7 @@ build_for_arm64_simulator() {
     --enable-static \
     --openssl-no-asm \
     --v8-options=--jitless \
+    $V8_LITE_MODE \
     --without-node-code-cache \
     --without-node-snapshot \
     --ios-simulator
@@ -156,6 +163,11 @@ build_framework_for_arm64_device() {
   # Remove libraries that do not exist for this target
   cp $XCODE_PROJECT_PATH $XCODE_PROJECT_PATH.bak
   for output_file in "${outputs_x64_only[@]}"; do
+    grep -vF "$output_file" $XCODE_PROJECT_PATH > temp && mv temp $XCODE_PROJECT_PATH
+  done
+  # --v8-lite-mode (both flavors) means these V8 libs are never built — scrub
+  # their Frameworks-phase lines from the pbxproj so the link doesn't fail.
+  for output_file in "${outputs_v8_lite_dropped[@]}"; do
     grep -vF "$output_file" $XCODE_PROJECT_PATH > temp && mv temp $XCODE_PROJECT_PATH
   done
   # Lite flavor: inspector/sqlite are --without'd, so their static libs are not
@@ -185,6 +197,11 @@ build_framework_for_arm64_simulator() {
   # Remove libraries that do not exist for this target
   cp $XCODE_PROJECT_PATH $XCODE_PROJECT_PATH.bak
   for output_file in "${outputs_x64_only[@]}"; do
+    grep -vF "$output_file" $XCODE_PROJECT_PATH > temp && mv temp $XCODE_PROJECT_PATH
+  done
+  # --v8-lite-mode (both flavors) means these V8 libs are never built — scrub
+  # their Frameworks-phase lines from the pbxproj so the link doesn't fail.
+  for output_file in "${outputs_v8_lite_dropped[@]}"; do
     grep -vF "$output_file" $XCODE_PROJECT_PATH > temp && mv temp $XCODE_PROJECT_PATH
   done
   # Lite flavor: inspector/sqlite are --without'd, so their static libs are not
