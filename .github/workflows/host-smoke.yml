@@ -26,13 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: '0'
+          fetch-depth: 1
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.6
 
-      # Python 3.12 (chosen by configure.py) doesn't have support for distutils
-      # https://github.com/nodejs/node-gyp/issues/2869 workaround
+      # gyp-next needs setuptools at build time and a bare venv doesn't bundle
+      # it (distutils was removed from the stdlib); install it explicitly.
       - name: Configure
         run: |
           python3.12 -m venv .

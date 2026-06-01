@@ -22,8 +22,8 @@ doing the task, and **don't duplicate their content back into here**.
   rejects; this is upstream behavior, not a mobile patch).
 - **iOS:** `./tools/ios_framework_prepare.sh [arm64|arm64-simulator]`. Builds on
   macOS (Xcode); produces `NodeMobile.xcframework`.
-- **Python 3.12 is required** for both. Newer Python (3.13/3.14) breaks V8's gyp
-  code generation; CI pins 3.12 in a venv with `setuptools`.
+- **Python 3.12 or 3.13** for both. gyp-next needs `setuptools` at build time, so
+  CI installs it into a venv (a bare venv omits it). 3.14 is unvalidated here.
 - **Flavors:** default `full`; `NODEJS_MOBILE_FLAVOR=lite` builds the
   size-reduced smaller binary.
 - → [`doc_mobile/BUILDING.md`](./doc_mobile/BUILDING.md), and the

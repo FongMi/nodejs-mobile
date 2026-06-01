@@ -118,18 +118,18 @@ jobs:
             echo "::notice::./android-configure not present at this commit (pre-layer-A); skipping configure step."
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         if: steps.detect.outputs.buildable == 'true'
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
-      # configure.py uses distutils which is removed in Python 3.12; this
-      # mirrors the workaround used in build-mobile.yml.
+      # gyp-next needs setuptools at build time (distutils was removed from the
+      # stdlib); mirrors the workaround used in build-mobile.yml.
       - name: Install Python build deps
         if: steps.detect.outputs.buildable == 'true'
         run: |
-          python3.12 -m pip install --upgrade pip
-          python3.12 -m pip install setuptools
+          python3.13 -m pip install --upgrade pip
+          python3.13 -m pip install setuptools
 
       - name: Setup Android NDK
         if: steps.detect.outputs.buildable == 'true'

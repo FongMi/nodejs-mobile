@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: '0'
+          fetch-depth: 1
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.6
@@ -118,7 +118,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: '0'
+          fetch-depth: 1
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.6
@@ -141,8 +141,8 @@ jobs:
           path: out_ios_${{ env.TARGET_ARCH }}
           key: libnode-ios-${{ env.TARGET_ARCH }}${{ env.FLAVOR_SUFFIX }}-v1-${{ steps.ck.outputs.key }}
 
-      # Python 3.12 (chosen by configure.py) doesn't have support for distutils
-      # https://github.com/nodejs/node-gyp/issues/2869 workaround
+      # gyp-next needs setuptools at build time and a bare venv doesn't bundle
+      # it (distutils was removed from the stdlib); install it explicitly.
       - name: Build
         if: steps.libnode-cache.outputs.cache-hit != 'true'
         run: |
@@ -169,7 +169,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: '0'
+          fetch-depth: 1
 
       - name: Install build utils
         run: |
@@ -226,7 +226,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: '0'
+          fetch-depth: 1
 
       # Pull only THIS flavor's per-slice frameworks (node-ios-<arch>-<flavor>).
       - uses: actions/download-artifact@v4
@@ -235,8 +235,8 @@ jobs:
           merge-multiple: true
           path: out_ios
 
-      # Python 3.12 (chosen by configure.py) doesn't have support for distutils
-      # https://github.com/nodejs/node-gyp/issues/2869 workaround
+      # gyp-next needs setuptools at build time and a bare venv doesn't bundle
+      # it (distutils was removed from the stdlib); install it explicitly.
       - name: Generate config.gypi
         run: |
           python3.12 -m venv .
@@ -281,7 +281,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: '0'
+          fetch-depth: 1
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
@@ -343,7 +343,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: '0'
+          fetch-depth: 1
 
       - uses: actions/download-artifact@v4
         with:
