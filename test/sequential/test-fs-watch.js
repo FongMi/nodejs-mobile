@@ -29,15 +29,15 @@ const fs = require('fs');
 const path = require('path');
 
 const tmpdir = require('../common/tmpdir');
-const { isMainThread } = require('worker_threads');
 
-if (!isMainThread) {
+if (!common.isMainThread)
   common.skip('process.chdir is not available in Workers');
-}
 
 const expectFilePath = common.isWindows ||
                        common.isLinux ||
-                       common.isMacOS ||
+                       common.isOSX ||
+                       common.isIOS ||
+                       common.isAndroid ||
                        common.isAIX;
 
 const testDir = tmpdir.path;
@@ -97,34 +97,24 @@ function repeat(fn) {
   const testsubdir = fs.mkdtempSync(testDir + path.sep);
   const filepath = path.join(testsubdir, 'newfile.txt');
 
-  function doWatch() {
-    const watcher =
-      fs.watch(testsubdir, common.mustCall(function(event, filename) {
-        const renameEv = common.isSunOS || common.isAIX ? 'change' : 'rename';
-        assert.strictEqual(event, renameEv);
-        if (expectFilePath) {
-          assert.strictEqual(filename, 'newfile.txt');
-        } else {
-          assert.strictEqual(filename, null);
-        }
-        clearInterval(interval);
-        watcher.close();
-      }));
+  const watcher =
+    fs.watch(testsubdir, common.mustCall(function(event, filename) {
+      const renameEv = common.isSunOS || common.isAIX ? 'change' : 'rename';
+      assert.strictEqual(event, renameEv);
+      if (expectFilePath) {
+        assert.strictEqual(filename, 'newfile.txt');
+      } else {
+        assert.strictEqual(filename, null);
+      }
+      clearInterval(interval);
+      watcher.close();
+    }));
 
-    const interval = repeat(() => {
-      fs.rmSync(filepath, { force: true });
-      const fd = fs.openSync(filepath, 'w');
-      fs.closeSync(fd);
-    });
-  }
-
-  if (common.isMacOS) {
-    // On macOS delay watcher start to avoid leaking previous events.
-    // Refs: https://github.com/libuv/libuv/pull/4503
-    setTimeout(doWatch, common.platformTimeout(100));
-  } else {
-    doWatch();
-  }
+  const interval = repeat(() => {
+    fs.rmSync(filepath, { force: true });
+    const fd = fs.openSync(filepath, 'w');
+    fs.closeSync(fd);
+  });
 }
 
 // https://github.com/joyent/node/issues/2293 - non-persistent watcher should
@@ -136,45 +126,41 @@ function repeat(fn) {
 // Whitebox test to ensure that wrapped FSEvent is safe
 // https://github.com/joyent/node/issues/6690
 {
-  if (common.isMacOS || common.isWindows) {
-    let oldhandle;
-    assert.throws(
-      () => {
-        const w = fs.watch(__filename, common.mustNotCall());
-        oldhandle = w._handle;
-        w._handle = { close: w._handle.close };
-        w.close();
-      },
-      {
-        name: 'Error',
-        code: 'ERR_INTERNAL_ASSERTION',
-        message: /^handle must be a FSEvent/,
-      }
-    );
-    oldhandle.close(); // clean up
-  }
+  let oldhandle;
+  assert.throws(
+    () => {
+      const w = fs.watch(__filename, common.mustNotCall());
+      oldhandle = w._handle;
+      w._handle = { close: w._handle.close };
+      w.close();
+    },
+    {
+      name: 'Error',
+      code: 'ERR_INTERNAL_ASSERTION',
+      message: /^handle must be a FSEvent/,
+    }
+  );
+  oldhandle.close(); // clean up
 }
 
 {
-  if (common.isMacOS || common.isWindows) {
-    let oldhandle;
-    assert.throws(
-      () => {
-        const w = fs.watch(__filename, common.mustNotCall());
-        oldhandle = w._handle;
-        const protoSymbols =
-          Object.getOwnPropertySymbols(Object.getPrototypeOf(w));
-        const kFSWatchStart =
-          protoSymbols.find((val) => val.toString() === 'Symbol(kFSWatchStart)');
-        w._handle = {};
-        w[kFSWatchStart]();
-      },
-      {
-        name: 'Error',
-        code: 'ERR_INTERNAL_ASSERTION',
-        message: /^handle must be a FSEvent/,
-      }
-    );
-    oldhandle.close(); // clean up
-  }
+  let oldhandle;
+  assert.throws(
+    () => {
+      const w = fs.watch(__filename, common.mustNotCall());
+      oldhandle = w._handle;
+      const protoSymbols =
+        Object.getOwnPropertySymbols(Object.getPrototypeOf(w));
+      const kFSWatchStart =
+        protoSymbols.find((val) => val.toString() === 'Symbol(kFSWatchStart)');
+      w._handle = {};
+      w[kFSWatchStart]();
+    },
+    {
+      name: 'Error',
+      code: 'ERR_INTERNAL_ASSERTION',
+      message: /^handle must be a FSEvent/,
+    }
+  );
+  oldhandle.close(); // clean up
 }
