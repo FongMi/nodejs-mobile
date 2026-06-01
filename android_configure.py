@@ -1,6 +1,7 @@
 import platform
 import sys
 import os
+import shutil
 
 if platform.system() != "Linux" and platform.system() != "Darwin":
     print("android-configure is currently only supported on Linux and Darwin.")
@@ -56,6 +57,14 @@ os.environ['CXX'] = toolchain_path + "/bin/" + TOOLCHAIN_PREFIX + android_sdk_ve
 # nodejs-mobile patch: add host CC and CXX
 os.environ['CC_host'] = os.popen('command -v clang').read().strip()
 os.environ['CXX_host'] = os.popen('command -v clang++').read().strip()
+
+# nodejs-mobile patch: route every compile through sccache when it is on PATH
+# (CI sets it up via mozilla-actions/sccache-action). make/gyp invoke "$CC ...",
+# so prefixing the wrapper is enough. No-op locally when sccache isn't installed.
+sccache = shutil.which("sccache")
+if sccache:
+    for _var in ("CC", "CXX", "CC_host", "CXX_host"):
+        os.environ[_var] = sccache + " " + os.environ[_var]
 
 GYP_DEFINES = "target_arch=" + arch
 GYP_DEFINES += " v8_target_arch=" + arch

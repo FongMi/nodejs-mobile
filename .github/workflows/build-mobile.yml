@@ -10,6 +10,7 @@ on:
 
 env:
   SCCACHE_GHA_ENABLED: 'true'
+  SCCACHE_IDLE_TIMEOUT: '0'   # keep the sccache server alive through long builds
   ANDROID_NDK_VERSION: r27d
   ANDROID_TARGET_SDK_VERSION: 24
   # Flavor is a per-job matrix dimension ([full, lite]) so every Build produces
@@ -97,6 +98,10 @@ jobs:
       # them instead of re-running ./configure + an NDK install.
       - name: Stage NAPI/addon headers
         run: ./tools/copy_libnode_headers.sh android
+
+      - name: sccache stats
+        if: always()
+        run: sccache --show-stats || true
 
       - uses: actions/upload-artifact@v4
         with:

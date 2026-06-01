@@ -65,9 +65,6 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-
       # Reuse the framework build-mobile.yml already produced for this commit
       # instead of rebuilding (a from-scratch build is 1.5-3h and overruns the job
       # timeout). build-mobile deletes the per-arch node-ios-* artifacts after
