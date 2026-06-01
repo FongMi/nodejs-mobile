@@ -55,7 +55,7 @@ else:
 print("\033[92mInfo: \033[0m" + "Configuring for " + DEST_CPU + "...")
 
 if platform.system() == "Darwin":
-    host_os = "darwin"
+    host_os = "mac"
     toolchain_path = android_ndk_path + "/toolchains/llvm/prebuilt/darwin-x86_64"
 
 elif platform.system() == "Linux":
@@ -65,13 +65,37 @@ elif platform.system() == "Linux":
 os.environ['PATH'] += os.pathsep + toolchain_path + "/bin"
 os.environ['CC'] = toolchain_path + "/bin/" + TOOLCHAIN_PREFIX + android_sdk_version + "-" +  "clang"
 os.environ['CXX'] = toolchain_path + "/bin/" + TOOLCHAIN_PREFIX + android_sdk_version + "-" + "clang++"
+# nodejs-mobile patch: add host CC and CXX
+os.environ['CC_host'] = os.popen('command -v clang').read().strip()
+os.environ['CXX_host'] = os.popen('command -v clang++').read().strip()
 
 GYP_DEFINES = "target_arch=" + arch
 GYP_DEFINES += " v8_target_arch=" + arch
 GYP_DEFINES += " android_target_arch=" + arch
 GYP_DEFINES += " host_os=" + host_os + " OS=android"
 GYP_DEFINES += " android_ndk_path=" + android_ndk_path
+GYP_DEFINES += " android_ndk_sysroot=" + toolchain_path + "/sysroot"
+# Flavor switch (mobile-only, wrapper-level so configure.py stays upstream-clean):
+#   full (default) — the shared build all consumers get; flags unchanged.
+#   lite           — comapeo-tuned subtractions (see doc_mobile/README.md, "The lite variant").
+# Set via env NODEJS_MOBILE_FLAVOR=lite. Android lite keeps the JIT and V8's
+# native WASM engine (undici uses them); it only drops features comapeo doesn't
+# use and turns on dead-code stripping.
+flavor = os.environ.get("NODEJS_MOBILE_FLAVOR", "full").strip().lower()
+if flavor not in ("full", "lite"):
+    print("\033[91mError: \033[0m" + "NODEJS_MOBILE_FLAVOR must be 'full' or 'lite'")
+    sys.exit(1)
+print("\033[92mInfo: \033[0m" + "Build flavor: " + flavor)
+
+intl = "small-icu"
+extra_flags = ""
+if flavor == "lite":
+    intl = "none"
+    extra_flags = " --without-amaro --without-inspector --without-sqlite"
+    # gc-sections (lite only, so the full binary's codegen is untouched).
+    GYP_DEFINES += " node_mobile_lite=1"
+
 os.environ['GYP_DEFINES'] = GYP_DEFINES
 
 if os.path.exists("./configure"):
-    os.system("./configure --dest-cpu=" + DEST_CPU + " --dest-os=android --openssl-no-asm --cross-compiling")
+    os.system("./configure --dest-cpu=" + DEST_CPU + " --dest-os=android --openssl-no-asm --with-intl=" + intl + extra_flags + " --cross-compiling --shared")
