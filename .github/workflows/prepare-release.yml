@@ -1,0 +1,89 @@
+name: Prepare release
+
+# Step 1 of the guarded release (doc_mobile/RELEASING.md). Manually dispatched
+# with a version; opens a release PR that bumps the version-of-record and the
+# CHANGELOG and labels it so the full Tier-2 gate runs. NOTHING is tagged or
+# published here — that is publish-release.yml, after this PR is reviewed and
+# its required checks are green. No individual pushes a tag.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version X.Y.Z (e.g. 24.15.0)'
+        required: true
+      base:
+        description: 'Branch to release from'
+        default: mobile/v24
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    steps:
+      # Use a PAT (secret RELEASE_PAT), not the default GITHUB_TOKEN: a branch
+      # pushed with GITHUB_TOKEN does NOT trigger the Build / gate workflows, so
+      # the release PR would never get its required checks. The PAT must have
+      # `repo` + `workflow` scope.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.base }}
+          token: ${{ secrets.RELEASE_PAT }}
+          fetch-depth: 0
+
+      - name: Validate version
+        run: |
+          echo "${{ inputs.version }}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "::error::version must be X.Y.Z"; exit 1; }
+
+      - name: Bump version-of-record + flag release
+        env:
+          V: ${{ inputs.version }}
+        run: |
+          MAJOR=${V%%.*}; REST=${V#*.}; MINOR=${REST%%.*}; PATCH=${REST##*.}
+          f=src/node_mobile_version.h
+          sed -i -E "s/(#define NODE_MOBILE_MAJOR_VERSION )[0-9]+/\1${MAJOR}/" "$f"
+          sed -i -E "s/(#define NODE_MOBILE_MINOR_VERSION )[0-9]+/\1${MINOR}/" "$f"
+          sed -i -E "s/(#define NODE_MOBILE_PATCH_VERSION )[0-9]+/\1${PATCH}/" "$f"
+          # Flag the build as a release so NODE_MOBILE_TAG drops the "-pre"
+          # suffix (publish-release.yml unflags it in a follow-up commit).
+          sed -i -E "s/(#define NODE_VERSION_IS_RELEASE )0/\11/" src/node_version.h
+          echo "Set mobile version to ${MAJOR}.${MINOR}.${PATCH}; flagged release."
+          grep -E "NODE_MOBILE_(MAJOR|MINOR|PATCH)_VERSION|NODE_VERSION_IS_RELEASE " "$f" src/node_version.h
+
+      - name: Prepend CHANGELOG entry
+        env:
+          V: ${{ inputs.version }}
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          # Insert a dated section after the first heading line. Maintainers fill
+          # in the bullet points before merging.
+          awk -v v="$V" -v d="$DATE" 'NR==1{print; print ""; print "## " v " (" d ")"; print ""; print "- _TODO: summarize changes for " v " before merging._"; next} {print}' \
+            doc_mobile/CHANGELOG.md > /tmp/CHANGELOG.md && mv /tmp/CHANGELOG.md doc_mobile/CHANGELOG.md
+
+      - name: Open release PR
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          V: ${{ inputs.version }}
+          BASE: ${{ inputs.base }}
+        run: |
+          BR="release/v${V}"
+          git config user.name "nodejs-mobile-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git checkout -b "$BR"
+          git commit -aqm "release: nodejs-mobile ${V}"
+          git push -f origin "$BR"
+          PR=$(gh pr create --base "$BASE" --head "$BR" \
+            --title "release: nodejs-mobile ${V}" \
+            --body "Automated release PR for **nodejs-mobile ${V}** (see doc_mobile/RELEASING.md).
+
+          - [x] version bumped in \`src/node_mobile_version.h\` + \`NODE_VERSION_IS_RELEASE\` flagged
+          - [ ] CHANGELOG entry filled in
+          - [ ] required checks green (Build full+lite, Tier-2 both platforms, NAPI smoke)
+          - [ ] real-device smoke (RELEASE_PLAN Phase 5)
+
+          Merging this PR triggers \`publish-release.yml\` (Environment-gated) to tag \`nodejs-mobile-${V}\` and publish the GitHub Release. **Do not push a tag by hand.**")
+          echo "Opened $PR"
+          gh pr edit "$PR" --add-label mobile-test || echo "::warning::could not add mobile-test label (add it manually once Build is green)"

@@ -1,0 +1,141 @@
+name: Publish release
+
+# Step 2 of the guarded release (doc_mobile/RELEASING.md): runs when a
+# `release:` commit (version bump in src/node_mobile_version.h) lands on a
+# release branch — i.e. when the prepare-release PR is merged after its
+# required checks are green. It tags and publishes; it does NOT decide whether
+# tests passed (branch protection's required checks do that before merge).
+#
+# The actual tag + GitHub Release creation sits behind the `release`
+# Environment, so a human with the reviewer role must approve the irreversible
+# step. No individual pushes a tag by hand.
+on:
+  push:
+    branches: [mobile/v24, main]
+    paths: ['src/node_mobile_version.h']
+
+permissions:
+  contents: write
+  actions: read    # read Build/Tier-2 run status + download release artifacts
+
+jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      is_release: ${{ steps.v.outputs.is_release }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse version + confirm release commit
+        id: v
+        run: |
+          f=src/node_mobile_version.h
+          MA=$(grep -oE 'NODE_MOBILE_MAJOR_VERSION [0-9]+' "$f" | awk '{print $2}')
+          MI=$(grep -oE 'NODE_MOBILE_MINOR_VERSION [0-9]+' "$f" | awk '{print $2}')
+          PA=$(grep -oE 'NODE_MOBILE_PATCH_VERSION [0-9]+' "$f" | awk '{print $2}')
+          echo "version=${MA}.${MI}.${PA}" >> "$GITHUB_OUTPUT"
+          # Only a real release: NODE_VERSION_IS_RELEASE flagged AND the head
+          # commit is a `release:` commit (avoids firing on unrelated edits).
+          REL=$(grep -cE '#define NODE_VERSION_IS_RELEASE 1' src/node_version.h || true)
+          MSG=$(git log -1 --format=%s)
+          if [ "$REL" = "1" ] && echo "$MSG" | grep -q '^release: nodejs-mobile '; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "Not a release commit (IS_RELEASE=$REL, msg='$MSG') — skipping publish."
+          fi
+
+  publish:
+    needs: guard
+    if: needs.guard.outputs.is_release == 'true'
+    runs-on: ubuntu-24.04
+    environment: release     # <-- approval gate for the irreversible tag+publish
+    env:
+      V: ${{ needs.guard.outputs.version }}
+      SHA: ${{ github.sha }}
+      GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_PAT }}
+          fetch-depth: 0
+
+      # "Tests pass before any release": branch protection requires the cheap
+      # always-run checks (smoke/napi) to merge; here we additionally require the
+      # heavy Tier-2 curated gate to be green for THIS commit. Each Tier-2
+      # workflow runs a [full, lite] matrix, and a run only concludes success if
+      # BOTH flavor legs (x both platforms) pass — so this single check covers
+      # full AND lite. The gate runs on the release PR via the auto-added
+      # `mobile-test` label; because releases are rebase/FF-merged (linear
+      # patch-stack history), the PR head SHA == this commit, so the run is found.
+      - name: Verify Tier-2 gate green for this commit
+        run: |
+          for wf in android-emulator-tests.yml ios-simulator-tests.yml; do
+            ok=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$wf" --commit "$SHA" \
+                   --status success --limit 1 --json databaseId -q '.[0].databaseId')
+            [ -n "$ok" ] || { echo "::error::Tier-2 gate ($wf) is not green for $SHA. Run/await it (mobile-test label) before releasing."; exit 1; }
+            echo "Tier-2 $wf green for $SHA (run $ok)"
+          done
+
+      - name: Create + push tag
+        run: |
+          TAG="nodejs-mobile-${V}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::tag $TAG already exists"; exit 1
+          fi
+          git tag -a "$TAG" -m "nodejs-mobile ${V}" "$SHA"
+          git push origin "$TAG"
+          echo "Tagged $TAG at $SHA"
+
+      # The release-commit push triggers ONE matrix Build that compiles BOTH
+      # flavors (full + lite); the Tier-2 gate verified above already consumed
+      # its artifacts, so it is green by now. Locate that run for the artifact
+      # download. (A matrix run concludes success only if every flavor x arch
+      # leg passed, so a single green run means both flavors built.)
+      - name: Locate the Build run (both flavors) for this commit
+        run: |
+          run_id=""
+          for _ in $(seq 1 60); do   # brief poll for run-index lag
+            run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow build-mobile.yml --commit "$SHA" \
+                       --status success --limit 1 --json databaseId -q '.[0].databaseId')
+            [ -n "$run_id" ] && break
+            sleep 30
+          done
+          [ -n "$run_id" ] || { echo "::error::no green (full+lite) Build run for $SHA"; exit 1; }
+          echo "Build $run_id green for $SHA (both flavors via matrix)"
+
+      - name: Download all flavor artifacts
+        run: |
+          mkdir -p dl
+          for run in $(gh run list --repo "$GITHUB_REPOSITORY" --workflow build-mobile.yml --commit "$SHA" \
+                         --status success --json databaseId -q '.[].databaseId'); do
+            gh run download "$run" --repo "$GITHUB_REPOSITORY" --dir "dl/$run" || true
+          done
+          # Flatten: each combined artifact dir contains bin/ + include/ (android)
+          # or NodeMobile.xcframework + include/ (ios).
+          find dl -maxdepth 2 -type d | sort
+
+      - name: Package release zips
+        run: |
+          mkdir -p out
+          pack() { # $1 = artifact name, $2 = zip basename
+            local src; src=$(find dl -type d -name "$1" | head -1)
+            [ -n "$src" ] || { echo "::warning::artifact $1 missing — skipping $2"; return; }
+            ( cd "$src" && zip -qr "$GITHUB_WORKSPACE/out/$2-${V}.zip" . )
+            echo "packed $2-${V}.zip"
+          }
+          pack nodejs-mobile-android       nodejs-mobile-android
+          pack nodejs-mobile-android-lite  nodejs-mobile-android-lite
+          pack nodejs-mobile-ios           nodejs-mobile-ios
+          pack nodejs-mobile-ios-lite      nodejs-mobile-ios-lite
+          ls -la out
+
+      - name: Create GitHub Release
+        run: |
+          TAG="nodejs-mobile-${V}"
+          NOTES=$(awk '/^## /{c++} c==1{print} c==2{exit}' doc_mobile/CHANGELOG.md)
+          gh release create "$TAG" out/*.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "nodejs-mobile ${V}" \
+            --notes "${NOTES:-Release ${V}. See doc_mobile/CHANGELOG.md.}"
+          echo "Published release $TAG"
