@@ -1,0 +1,14 @@
+# Patch-stack base.
+#
+# The first non-comment, non-empty line is the SHA (or tag) that the
+# nodejs-mobile patch stack is rebased on top of. CI walks every commit in
+# `${BASE}..HEAD` and validates each one (see
+# .github/workflows/validate-patch-stack.yml). When rebasing the stack to a
+# newer upstream Node.js release, update this file as the first commit on
+# the rebase branch.
+#
+# Subsequent non-comment lines are informational — typically the
+# human-readable upstream version label.
+
+v24.15.0
+Upstream Node.js v24.15.0 (LTS, "Krypton")
