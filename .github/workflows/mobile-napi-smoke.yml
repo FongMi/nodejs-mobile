@@ -32,7 +32,7 @@ jobs:
           fetch-depth: 1
 
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.6
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
 
       - name: Install build utils
         run: |
@@ -40,7 +40,7 @@ jobs:
           sudo apt-get install -y gcc-multilib g++-multilib
 
       - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
+        uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1.6.0
         id: setup-ndk
         with:
           ndk-version: ${{ env.ANDROID_NDK_VERSION }}

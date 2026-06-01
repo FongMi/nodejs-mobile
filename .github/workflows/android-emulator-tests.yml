@@ -35,7 +35,7 @@ env:
   EMULATOR_API_LEVEL: 30
   # testnode app/build.gradle pins this NDK for the CMake step that links the
   # prebuilt libnode.so; install it explicitly (see "Install testnode app NDK").
-  TESTNODE_NDK_VERSION: 27.2.12479018
+  TESTNODE_NDK_VERSION: 27.3.13750724
   # Only build the ABI the emulator runs; CMake imports a libnode.so per ABI.
   ORG_GRADLE_PROJECT_testnodeAbis: x86_64
 
@@ -75,7 +75,7 @@ jobs:
           fetch-depth: 1
 
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.6
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
 
       - name: Install build utils
         run: |
@@ -83,7 +83,7 @@ jobs:
           sudo apt-get install -y gcc-multilib g++-multilib
 
       - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
+        uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1.6.0
         id: setup-ndk
         with:
           ndk-version: ${{ env.ANDROID_NDK_VERSION }}
@@ -150,7 +150,7 @@ jobs:
       # curated subset through the proxy. Everything runs in one emulator-runner
       # script so the device stays alive for the whole session.
       - name: Run curated JS subset on emulator
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
         with:
           api-level: ${{ env.EMULATOR_API_LEVEL }}
           target: default
