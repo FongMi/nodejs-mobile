@@ -1184,7 +1184,7 @@
           'conditions': [
             ['v8_enable_webassembly==1', {
               'conditions': [
-                ['((_toolset=="host" and host_arch=="arm64" or _toolset=="target" and target_arch=="arm64") and (OS in "linux mac ios openharmony")) or ((_toolset=="host" and host_arch=="x64" or _toolset=="target" and target_arch=="x64") and (OS in "linux mac openharmony"))', {
+                ['((_toolset=="host" and host_arch=="arm64" or _toolset=="target" and target_arch=="arm64") and (OS in "linux mac ios openharmony")) or ((_toolset=="host" and host_arch=="x64" or _toolset=="target" and target_arch=="x64") and (OS in "linux mac ios openharmony"))', {
                   'sources': [
                     '<(V8_ROOT)/src/trap-handler/handler-inside-posix.cc',
                     '<(V8_ROOT)/src/trap-handler/handler-outside-posix.cc',
@@ -1327,7 +1327,8 @@
         # Platforms that don't have Compare-And-Swap (CAS) support need to link atomic library
         # to implement atomic memory access.
         # Clang needs it for some atomic operations (https://clang.llvm.org/docs/Toolchain.html#atomics-library).
-        ['(OS=="linux" and clang==1) or (v8_current_cpu in ["mips64", "mips64el", "arm", "riscv64", "loong64"])', {
+        # nodejs-mobile patch: https://github.com/nodejs/node/pull/57748
+        ['((OS=="linux" or OS=="android") and clang==1) or (v8_current_cpu in ["mips64", "mips64el", "ppc", "arm", "riscv64", "loong64"])', {
           'link_settings': {
             'libraries': ['-latomic', ],
           },
@@ -1477,6 +1478,8 @@
             '<(V8_ROOT)/src/base/platform/platform-posix.h',
             '<(V8_ROOT)/src/base/platform/platform-posix-time.cc',
             '<(V8_ROOT)/src/base/platform/platform-posix-time.h',
+            # nodejs-mobile patch: https://github.com/nodejs/node/pull/57748
+            '<(V8_ROOT)/src/base/platform/platform-linux.h',
           ],
           'link_settings': {
             'target_conditions': [
@@ -1489,9 +1492,18 @@
           },
           'target_conditions': [
             ['_toolset=="host"', {
-              'sources': [
-                '<(V8_ROOT)/src/base/debug/stack_trace_posix.cc',
-                '<(V8_ROOT)/src/base/platform/platform-linux.cc',
+              'target_conditions': [
+                ['host_os == "mac"', {
+                  'sources': [
+                    '<(V8_ROOT)/src/base/debug/stack_trace_posix.cc',
+                    '<(V8_ROOT)/src/base/platform/platform-darwin.cc',
+                  ]
+                }, {
+                  'sources': [
+                    '<(V8_ROOT)/src/base/debug/stack_trace_posix.cc',
+                    '<(V8_ROOT)/src/base/platform/platform-linux.cc',
+                  ]
+                }],
               ],
             }, {
               'sources': [
@@ -2073,12 +2085,14 @@
             ],
           }, { # 'OS!="win"'
             'conditions': [
-              ['_toolset == "host" and host_arch == "x64" or _toolset == "target" and target_arch=="x64"', {
+              # nodejs-mobile patch: https://github.com/nodejs/node/pull/57748
+              ['_toolset == "host" and host_arch == "x64" and (target_arch == "x64" or target_arch == "arm64") or (_toolset == "target" and target_arch == "x64")', {
                 'sources': [
                   '<(V8_ROOT)/src/heap/base/asm/x64/push_registers_asm.cc',
                 ],
               }],
-              ['_toolset == "host" and host_arch == "ia32" or _toolset == "target" and target_arch=="ia32"', {
+              # nodejs-mobile patch: https://github.com/nodejs/node/pull/57748
+              ['_toolset == "host" and host_arch == "x64" and (target_arch == "arm" or target_arch == "ia32") or (_toolset == "target" and target_arch == "ia32")', {
                 'sources': [
                   '<(V8_ROOT)/src/heap/base/asm/ia32/push_registers_asm.cc',
                 ],
@@ -2294,6 +2308,46 @@
       },
     },  # postmortem-metadata
 
+    # nodejs-mobile patch: this whole target
+    {
+      'target_name': 'ndk_sources',
+      'type': 'none',
+      'conditions': [
+        ['OS=="android"', {
+          'copies': [{
+            'files': [
+              '<(android_ndk_path)/sources/android/cpufeatures/cpu-features.c',
+            ],
+            'destination': '<(SHARED_INTERMEDIATE_DIR)/ndk-sources/',
+          }],
+        }]
+      ]
+    },
+
+    # nodejs-mobile patch: this whole target
+    {
+      'target_name': 'ndk_cpufeatures',
+      'type': 'static_library',
+      'toolsets': ['target'],
+      'conditions': [
+        ['OS=="android" and _toolset=="target"', {
+          'dependencies': ['ndk_sources'],
+          'include_dirs': [
+            '<(android_ndk_path)/sources/android/cpufeatures',
+            '<(android_ndk_sysroot)/usr/include', # cpu-features.c needs sys/system_properties.h
+          ],
+          'sources': [
+            '<(SHARED_INTERMEDIATE_DIR)/ndk-sources/cpu-features.c',
+          ],
+          'direct_dependent_settings': {
+            'include_dirs': [
+              '<(android_ndk_path)/sources/android/cpufeatures',
+            ],
+          },
+        }],
+      ],
+    },
+
     {
       'target_name': 'v8_zlib',
       'type': 'static_library',
@@ -2307,6 +2361,10 @@
               'defines': ['X86_WINDOWS']
             }]
           ]
+        }],
+        # nodejs-mobile patch:
+        ['OS=="android" and _toolset=="target"', {
+          'dependencies': ['ndk_cpufeatures'],
         }],
       ],
       'direct_dependent_settings': {
