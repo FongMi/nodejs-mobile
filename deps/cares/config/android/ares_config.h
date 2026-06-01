@@ -20,7 +20,7 @@
 #define GETHOSTNAME_TYPE_ARG2 size_t
 
 /* Define to the type qualifier of arg 1 for getnameinfo. */
-#define GETNAMEINFO_QUAL_ARG1 
+#define GETNAMEINFO_QUAL_ARG1
 
 /* Define to the type of arg 1 for getnameinfo. */
 #define GETNAMEINFO_TYPE_ARG1 struct sockaddr *
@@ -35,10 +35,10 @@
 #define GETNAMEINFO_TYPE_ARG7 int
 
 /* Specifies the number of arguments to getservbyport_r */
-#define GETSERVBYPORT_R_ARGS 
+#define GETSERVBYPORT_R_ARGS
 
 /* Specifies the number of arguments to getservbyname_r */
-#define GETSERVBYNAME_R_ARGS 
+#define GETSERVBYNAME_R_ARGS
 
 /* Define to 1 if you have AF_INET6. */
 #define HAVE_AF_INET6
@@ -124,8 +124,11 @@
 /* Define to 1 if you have the getrandom function. */
 #define HAVE_GETRANDOM
 
+// nodejs-mobile patch: wrap with ifndef __ANDROID__
 /* Define to 1 if you have the getservbyport_r function. */
-/* #undef HAVE_GETSERVBYPORT_R */
+#ifndef __ANDROID__
+#define HAVE_GETSERVBYPORT_R 1
+#endif
 
 /* Define to 1 if you have the getservbyname_r function. */
 /* #undef HAVE_GETSERVBYNAME_R */
@@ -393,7 +396,7 @@
 #define CARES_RANDOM_FILE "/dev/urandom"
 
 /* Define to the type qualifier pointed by arg 5 for recvfrom. */
-#define RECVFROM_QUAL_ARG5 
+#define RECVFROM_QUAL_ARG5
 
 /* Define to the type of arg 1 for recvfrom. */
 #define RECVFROM_TYPE_ARG1 int
@@ -441,7 +444,7 @@
 #define RECV_TYPE_RETV ssize_t
 
 /* Define to the type qualifier of arg 2 for send. */
-#define SEND_QUAL_ARG2 
+#define SEND_QUAL_ARG2
 
 /* Define to the type of arg 1 for send. */
 #define SEND_TYPE_ARG1 int
@@ -476,4 +479,4 @@
 /* Define to 1 if pthread_init() exists */
 /* #undef HAVE_PTHREAD_INIT */
 
-    
+
