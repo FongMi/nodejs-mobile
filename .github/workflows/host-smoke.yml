@@ -1,8 +1,7 @@
 # Fast host smoke test: builds Node natively on the runner (no cross-compile)
 # and asserts the binary runs. Catches gross regressions in lib/internal and
 # src/api introduced by the mobile patches before the slower cross-compile
-# build-mobile workflow runs. Builds only the 'node' target with -j to stay
-# under 15 minutes.
+# build-mobile workflow runs. Builds only the 'node' target with -j.
 
 name: Host smoke
 
@@ -12,12 +11,6 @@ on:
   push:
     branches: ['mobile/**', 'claude/**']
   workflow_dispatch:
-
-env:
-  SCCACHE_GHA_ENABLED: 'true'
-  SCCACHE_IDLE_TIMEOUT: '0'
-  CC: sccache cc
-  CXX: sccache c++
 
 permissions:
   contents: read
@@ -30,9 +23,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
 
       # gyp-next needs setuptools at build time and a bare venv doesn't bundle
       # it (distutils was removed from the stdlib); install it explicitly.
@@ -47,10 +37,6 @@ jobs:
         run: |
           source bin/activate
           make -j"$(nproc)" node
-
-      - name: sccache stats
-        if: always()
-        run: sccache --show-stats || true
 
       - name: Smoke test
         run: |
