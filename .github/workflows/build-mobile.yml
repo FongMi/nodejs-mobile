@@ -90,7 +90,13 @@ jobs:
           LDFLAGS: '-Wl,-z,max-page-size=16384'
         run: |
           ./tools/android_build.sh $MY_ANDROID_NDK_HOME $ANDROID_TARGET_SDK_VERSION $TARGET_ARCH
-          rm -rf ./out_android/libnode
+
+      # NAPI/addon headers are static src/ + deps/ files (no build output, no
+      # toolchain), so stage them unconditionally — this survives a libnode cache
+      # hit (where the Build step is skipped) and lets combine-android just merge
+      # them instead of re-running ./configure + an NDK install.
+      - name: Stage NAPI/addon headers
+        run: ./tools/copy_libnode_headers.sh android
 
       - uses: actions/upload-artifact@v4
         with:
@@ -171,35 +177,26 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Install build utils
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-multilib g++-multilib
-
-      - name: Setup Android NDK
-        uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1.6.0
-        with:
-          ndk-version: ${{ env.ANDROID_NDK_VERSION }}
-
       # Pull only THIS flavor's per-arch artifacts (node-android-<arch>-<flavor>);
       # the trailing -<flavor> keeps the full and lite combine legs from mixing.
+      # Each carries the per-abi libnode.so plus an identical out_android/libnode/
+      # include tree (staged in build-android), so no NDK or ./configure is needed
+      # here — just merge. (merge-multiple overwrites the duplicate header tree.)
       - uses: actions/download-artifact@v4
         with:
           pattern: node-android-*-${{ matrix.flavor }}
           merge-multiple: true
           path: out_android
 
-      - run: rm -rf out_android/libnode
-
-      - name: Generate config.gypi
-        run: ./configure
-
       - name: Combine
         run: |
-          mkdir -p artifacts/bin
-          mkdir -p artifacts/include
-          cp -R out_android/* artifacts/bin
-          ./tools/copy_libnode_headers.sh android
+          mkdir -p artifacts/bin artifacts/include
+          # Copy the per-abi binary dirs (armeabi-v7a/, arm64-v8a/, x86_64/),
+          # not the shared libnode/ header dir.
+          for d in out_android/*/; do
+            [ "$(basename "$d")" = "libnode" ] && continue
+            cp -R "$d" artifacts/bin/
+          done
           cp -R out_android/libnode/include/* artifacts/include
 
       - uses: actions/upload-artifact@v4
