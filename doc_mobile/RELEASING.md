@@ -14,8 +14,10 @@ Two workflows drive it:
   tags and publishes, behind the `release` Environment approval.
 
 The version of record is `src/node_mobile_version.h`. The tag is
-`nodejs-mobile-X.Y.Z`. Releases ship **both flavors** — `full` (the default
-binary) and `lite` (comapeo-tuned; see the
+`nodejs-mobile-<node-version>-<rev>` (e.g. `nodejs-mobile-24.15.0-0`); the
+`-<rev>` suffix increments for a mobile-only rebuild of the same upstream
+Node.js version. Releases ship **both flavors** — `full` (the default
+binary) and `lite` (size-reduced; see the
 [lite variant](./README.md#the-lite-variant)).
 
 ---

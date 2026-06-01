@@ -6,6 +6,7 @@
 </tr>
 <tr>
 <td>
+<a href="#24.15.0-0">24.15.0-0</a><br/>
 <a href="#18.20.4">18.20.4</a><br/>
 <a href="#18.17.3">18.17.3</a><br/>
 <a href="#18.17.2">18.17.2</a><br/>
@@ -33,8 +34,40 @@
 </tr>
 </table>
 
+<a id="24.15.0-0"></a>
+## 2026-06-01, Version 24.15.0-0 (Current)
+
+First release on the Node.js 24 line. The mobile patch stack is fully rebased on
+the upstream `v24.15.0` tag (linear history, no merge commit; V8 13.6).
+
+Releases on this line are versioned `<upstream-node-version>-<mobile-rev>` and
+tagged `nodejs-mobile-<upstream-node-version>-<mobile-rev>` (e.g.
+`nodejs-mobile-24.15.0-0`). The `-<mobile-rev>` suffix increments for a
+mobile-only rebuild of the same upstream Node.js version.
+
+### Notable Changes
+
+* **Engine:** Node.js 24.15.0 (V8 13.6).
+* **Android:** builds `libnode.so` for `arm64-v8a`, `armeabi-v7a`, and `x86_64`
+  with NDK r27d, target SDK 24; 16 KB memory-page size supported.
+* **iOS:** produces `NodeMobile.xcframework` (arm64 device + arm64 simulator).
+  V8 runs jitless and WebAssembly is served by the polywasm JS polyfill.
+* **Lite flavor:** `NODEJS_MOBILE_FLAVOR=lite` builds a size-reduced binary for
+  consumers that don't need the full feature set (drops ICU, inspector, sqlite,
+  amaro; iOS additionally drops the JIT + native WASM engine). The default
+  `full` binary is unchanged.
+* **Metadata:** `process.versions` exposes the mobile version key.
+* **Build:** `tools/android_build.sh` and `tools/ios_framework_prepare.sh`
+  (Android cross-build runs on Linux; iOS on macOS).
+* **Test gate:** Tier-1 on-device boot smoke, a curated `test/parallel` subset
+  run on an Android emulator and an iOS simulator, a NAPI symbol smoke, and a
+  real `crc-native` N-API addon build+load gate (see [`TESTING.md`](./TESTING.md)).
+* **CI / release:** new GitHub Actions workflows for the mobile build (both
+  flavors), on-device tests, per-commit patch-stack validation, and guarded
+  `prepare-release` / `publish-release` automation.
+
 <a id="18.20.4"></a>
-## 2024-10-07, Version 18.20.4 (Current)
+## 2024-10-07, Version 18.20.4
 
 ### Notable Changes
 
