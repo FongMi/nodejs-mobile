@@ -17,7 +17,7 @@ NODELIB_PROJECT_PATH='tools/ios-framework'
 XCODE_PROJECT_PATH='tools/ios-framework/NodeMobile.xcodeproj/project.pbxproj'
 
 # Flavor switch (mobile-only; see doc_mobile/README.md "The lite variant"). "full"
-# (default) is unchanged; "lite" is the comapeo-tuned build. Read here and
+# (default) is unchanged; "lite" is the size-reduced build. Read here and
 # threaded into both configure blocks and the static-lib link list.
 FLAVOR="${NODEJS_MOBILE_FLAVOR:-full}"
 if [ "$FLAVOR" != "full" ] && [ "$FLAVOR" != "lite" ]; then
@@ -32,7 +32,7 @@ if [ "$FLAVOR" = "lite" ]; then
   # iOS lite: --v8-lite-mode is the ~20MB lever — it drops the compiled JIT and
   # the V8 WASM engine, both already dead on iOS (runtime is jitless; undici's
   # WASM is served by the polywasm JS shim). --without-{amaro,inspector,sqlite}
-  # are comapeo-unused features.
+  # are features size-constrained consumers can drop.
   LITE_FLAGS="--without-amaro --without-inspector --without-sqlite --v8-lite-mode"
 fi
 

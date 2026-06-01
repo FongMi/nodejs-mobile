@@ -25,7 +25,7 @@ the orientation + task playbooks — then dive into the doc for your task below.
   `NodeMobile.xcframework` (incl. the `lite` flavor).
 - [RELEASING.md](./RELEASING.md) — the guarded, automated release process
   (version-bump PR → required checks → approval-gated tag + publish).
-- The [lite variant](#the-lite-variant) — a comapeo-tuned smaller binary
+- The [lite variant](#the-lite-variant) — a size-reduced smaller binary
   (see below).
 
 ## Testing
@@ -38,19 +38,19 @@ the orientation + task playbooks — then dive into the doc for your task below.
 
 The build ships in two flavors (selected by `NODEJS_MOBILE_FLAVOR`, default
 `full`). **`full`** is the general-purpose binary all consumers get. **`lite`**
-is a smaller binary tuned for one consumer (CoMapeo), built by layering
-feature-drops on top of the full configure — so the full binary and its test
-gate are unchanged.
+is a smaller binary for consumers that don't need the full feature set, built by
+layering feature-drops on top of the full configure — so the full binary and its
+test gate are unchanged.
 
 What `lite` drops (all already-available upstream `configure` flags, so no extra
 patch-stack surface):
 
-| Cut | Why it's safe for comapeo |
+| Cut | Why it can be dropped |
 |---|---|
-| `--without-amaro` (TS type-stripping) | comapeo ships plain `.js` |
+| `--without-amaro` (TS type-stripping) | for consumers shipping plain `.js` |
 | `--without-inspector` | not used in production |
-| `--without-sqlite` | comapeo uses the `better-sqlite3` addon, not `node:sqlite` |
-| `--with-intl=none` (no ICU) | comapeo's backend uses no `Intl.*` (verified: its only `Intl` user, valibot's `Intl.Segmenter`, sits behind grapheme validators comapeo doesn't use); it also shipped on Node 18 with `intl=none` |
+| `--without-sqlite` | for consumers using the `better-sqlite3` addon, not `node:sqlite` |
+| `--with-intl=none` (no ICU) | for consumers that use no `Intl.*` — verify per consumer (e.g. valibot's only `Intl` user, `Intl.Segmenter`, sits behind grapheme validators that may be unused); also shipped on Node 18 with `intl=none` |
 | `-ffunction-sections`/`--gc-sections` | dead-code strip; no behavior change |
 | **iOS only:** `--v8-lite-mode` | drops the compiled JIT + V8 WASM engine, both **dead on iOS** (it runs jitless; undici's WASM is served by the polywasm JS shim). This is the big lever. |
 
@@ -62,8 +62,8 @@ Measured shipping sizes (arm64, after symbol strip):
 
 `build-id` (`-Wl,--build-id=sha1`) is emitted on the Android `libnode.so` in
 **both** flavors so Sentry can symbolicate native crashes. The standing
-safeguard for `intl=none` is the comapeo backend test suite run against the lite
-binary — it catches any `Intl` breakage from future dependency changes.
+safeguard for `intl=none` is the consumer's own backend test suite run against the
+lite binary — it catches any `Intl` breakage from future dependency changes.
 
 ## Reference
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — contribution guidelines and the DCO.

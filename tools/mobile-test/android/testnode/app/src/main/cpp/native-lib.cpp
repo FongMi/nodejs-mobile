@@ -173,8 +173,7 @@ void* thread_stdout_func(void*) {
 int start_redirecting_stdout_stderr() {
     // Unbuffered (not line-buffered): a line-buffered libc stream can strand a
     // partial final line (e.g. the RESULT marker) in its buffer on teardown.
-    // Unbuffered writes go straight to the pipe. (Matches the redirect fix in
-    // digidem/comapeo-core-react-native's jni-bridge.cpp.)
+    // Unbuffered writes go straight to the pipe.
     setvbuf(stdout, 0, _IONBF, 0);
     pipe(pipe_stdout);
     dup2(pipe_stdout[1], STDOUT_FILENO);

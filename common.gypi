@@ -20,7 +20,7 @@
     'node_enable_experimentals%': 'false',
     'force_dynamic_crt%': 0,
 
-    # nodejs-mobile: set to 1 by android_configure.py for the comapeo-tuned
+    # nodejs-mobile: set to 1 by android_configure.py for the size-reduced
     # "lite" flavor (see doc_mobile/README.md, "The lite variant"). Enables dead-code
     # stripping; the "full" flavor (default 0) is left byte-for-byte unchanged.
     'node_mobile_lite%': 0,

@@ -77,10 +77,10 @@ GYP_DEFINES += " android_ndk_path=" + android_ndk_path
 GYP_DEFINES += " android_ndk_sysroot=" + toolchain_path + "/sysroot"
 # Flavor switch (mobile-only, wrapper-level so configure.py stays upstream-clean):
 #   full (default) — the shared build all consumers get; flags unchanged.
-#   lite           — comapeo-tuned subtractions (see doc_mobile/README.md, "The lite variant").
+#   lite           — size-reduced subtractions (see doc_mobile/README.md, "The lite variant").
 # Set via env NODEJS_MOBILE_FLAVOR=lite. Android lite keeps the JIT and V8's
-# native WASM engine (undici uses them); it only drops features comapeo doesn't
-# use and turns on dead-code stripping.
+# native WASM engine (undici uses them); it only drops features that
+# size-constrained consumers don't need, and turns on dead-code stripping.
 flavor = os.environ.get("NODEJS_MOBILE_FLAVOR", "full").strip().lower()
 if flavor not in ("full", "lite"):
     print("\033[91mError: \033[0m" + "NODEJS_MOBILE_FLAVOR must be 'full' or 'lite'")

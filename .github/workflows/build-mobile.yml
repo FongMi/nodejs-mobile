@@ -13,7 +13,7 @@ env:
   ANDROID_NDK_VERSION: r27d
   ANDROID_TARGET_SDK_VERSION: 24
   # Flavor is a per-job matrix dimension ([full, lite]) so every Build produces
-  # BOTH the shipped full binary and the comapeo-tuned lite binary, and the
+  # BOTH the shipped full binary and the size-reduced lite binary, and the
   # Tier-2 gate covers both (see doc_mobile/README.md "The lite variant"). Each
   # job derives NODEJS_MOBILE_FLAVOR + FLAVOR_SUFFIX from matrix.flavor (matrix
   # isn't visible at workflow-env scope). FLAVOR_SUFFIX ('' for full, '-lite'

@@ -153,5 +153,5 @@ with no argument it builds both and combines them. The output is an
 **`.xcframework`** bundling the device and simulator arm64 slices:
 `out_ios/NodeMobile.xcframework`.
 
-To build the comapeo-tuned smaller binary instead of the default, set
+To build the size-reduced smaller binary instead of the default, set
 `NODEJS_MOBILE_FLAVOR=lite` (see the [lite variant](./README.md#the-lite-variant)).

@@ -21,9 +21,9 @@ only approximates.
   intrinsics). Identical output; `test-napi-addon.js` cross-checks the result
   against Node's built-in `zlib.crc32`, so a wrong implementation fails loudly.
 
-crc-native is the same N-API module CoMapeo consumes
+crc-native is a real-world N-API module
 ([digidem/crc-native-nodejs-mobile](https://github.com/digidem/crc-native-nodejs-mobile)),
-so this gate exercises a real-world addon rather than a toy.
+so this gate exercises a production addon rather than a toy.
 
 The upstream `index.js`/`binding.js` load the addon via Bare's `require.addon`;
 for Node we load the compiled addon directly with `process.dlopen` (see
