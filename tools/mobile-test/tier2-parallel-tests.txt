@@ -1,0 +1,177 @@
+# Curated Tier 2 subset (doc_mobile/TEST_PLAN.md): single-process test/parallel
+# cases validated to pass on BOTH a real arm64 Android emulator and an iPhone
+# simulator. One test per line; blank lines and '#' comments are ignored.
+#
+# Harvested by running pure-JS categories (buffer, events, url, querystring,
+# string-decoder, path, crypto hash/hmac/cipher, util) through the proxy on both
+# devices and keeping the intersection of passes. Re-run that harvest on a fresh
+# device to grow coverage (see TEST_PLAN.md "Expanding the curated list").
+#
+# Deliberately EXCLUDED from this deterministic list:
+#   - test-timers-*  : timing-sensitive; flaky under emulation (pass in isolation,
+#                      flake in large batches). Run these in the nightly full
+#                      suite with flaky-test retries instead, not here.
+#   - test-os        : os.homedir() -> uv_os_homedir ENOENT (no HOME in sandbox).
+#   - test-assert    : a message-format check needs the JIT diff; V8 jitless
+#                      (required on iOS) emits the short form. Cosmetic.
+#   - tests that spawn a child node via process.execPath (buffer-constructor-
+#     node-modules, url-parse-deprecation, url-parse-invalid-input): on the iOS
+#     simulator execPath is the testnode binary and posix_spawn is permitted, so
+#     they pass; on Android execPath is app_process64 (not node), so the child
+#     SIGABRTs and the test fails. Asymmetric -> not in the both-platforms gate.
+# child_process / cluster / fork / signal / OpenSSL-CLI / FIPS cases are excluded
+# by the [$system==android] / [$system==ios] sections in test/*/*.status.
+#
+# NOTE: the proxy relaunches the app once per test, so it is sensitive to device
+# load. Prefer modest batches and a fresh emulator/simulator (as CI provides).
+parallel/test-buffer-alloc
+parallel/test-buffer-arraybuffer
+parallel/test-buffer-ascii
+parallel/test-buffer-backing-arraybuffer
+parallel/test-buffer-badhex
+parallel/test-buffer-bigint64
+parallel/test-buffer-bytelength
+parallel/test-buffer-compare
+parallel/test-buffer-compare-offset
+parallel/test-buffer-concat
+parallel/test-buffer-constants
+parallel/test-buffer-constructor-deprecation-error
+parallel/test-buffer-constructor-outside-node-modules
+parallel/test-buffer-copy
+parallel/test-buffer-equals
+parallel/test-buffer-failed-alloc-typed-arrays
+parallel/test-buffer-fakes
+parallel/test-buffer-fill
+parallel/test-buffer-from
+parallel/test-buffer-generic-methods
+parallel/test-buffer-includes
+parallel/test-buffer-indexof
+parallel/test-buffer-inheritance
+parallel/test-buffer-inspect
+parallel/test-buffer-isascii
+parallel/test-buffer-isencoding
+parallel/test-buffer-isutf8
+parallel/test-buffer-iterator
+parallel/test-buffer-new
+parallel/test-buffer-no-negative-allocation
+parallel/test-buffer-nopendingdep-map
+parallel/test-buffer-of-no-deprecation
+parallel/test-buffer-over-max-length
+parallel/test-buffer-parent-property
+parallel/test-buffer-pending-deprecation
+parallel/test-buffer-pool-untransferable
+parallel/test-buffer-prototype-inspect
+parallel/test-buffer-read
+parallel/test-buffer-readdouble
+parallel/test-buffer-readfloat
+parallel/test-buffer-readint
+parallel/test-buffer-readuint
+parallel/test-buffer-resizable
+parallel/test-buffer-safe-unsafe
+parallel/test-buffer-set-inspect-max-bytes
+parallel/test-buffer-sharedarraybuffer
+parallel/test-buffer-slice
+parallel/test-buffer-slow
+parallel/test-buffer-swap
+parallel/test-buffer-swap-fast
+parallel/test-buffer-tojson
+parallel/test-buffer-tostring
+parallel/test-buffer-tostring-4gb
+parallel/test-buffer-tostring-range
+parallel/test-buffer-tostring-rangeerror
+parallel/test-buffer-write
+parallel/test-buffer-write-fast
+parallel/test-buffer-writedouble
+parallel/test-buffer-writefloat
+parallel/test-buffer-writeint
+parallel/test-buffer-writeuint
+parallel/test-buffer-zero-fill
+parallel/test-buffer-zero-fill-cli
+parallel/test-buffer-zero-fill-reset
+parallel/test-crypto-cipheriv-decipheriv
+parallel/test-crypto-hash
+parallel/test-crypto-hash-stream-pipe
+parallel/test-crypto-hmac
+parallel/test-events-customevent
+parallel/test-events-getmaxlisteners
+parallel/test-events-list
+parallel/test-events-listener-count-with-listener
+parallel/test-events-on-async-iterator
+parallel/test-events-once
+parallel/test-events-static-geteventlisteners
+parallel/test-events-uncaught-exception-stack
+parallel/test-eventsource
+parallel/test-eventsource-disabled
+parallel/test-eventtarget
+parallel/test-eventtarget-brandcheck
+parallel/test-eventtarget-custom-inspect-does-not-throw
+parallel/test-eventtarget-memoryleakwarning
+parallel/test-eventtarget-once-twice
+parallel/test-fs-readfile
+parallel/test-os-eol
+parallel/test-path-basename
+parallel/test-path-dirname
+parallel/test-path-extname
+parallel/test-path-glob
+parallel/test-path-isabsolute
+parallel/test-path-join
+parallel/test-path-makelong
+parallel/test-path-normalize
+parallel/test-path-parse-format
+parallel/test-path-posix-exists
+parallel/test-path-posix-relative-on-windows
+parallel/test-path-relative
+parallel/test-path-resolve
+parallel/test-path-win32-exists
+parallel/test-path-zero-length-strings
+parallel/test-querystring
+parallel/test-querystring-escape
+parallel/test-querystring-maxKeys-non-finite
+parallel/test-querystring-multichar-separator
+parallel/test-stream-pipe-await-drain
+parallel/test-string-decoder
+parallel/test-string-decoder-end
+parallel/test-string-decoder-fuzz
+parallel/test-url-fileurltopath
+parallel/test-url-format
+parallel/test-url-format-invalid-input
+parallel/test-url-invalid-file-url-path-input
+parallel/test-url-is-url-internal
+parallel/test-url-parse-format
+parallel/test-url-parse-query
+parallel/test-url-pathtofileurl
+parallel/test-url-relative
+parallel/test-url-revokeobjecturl
+parallel/test-url-urltooptions
+parallel/test-util-format
+parallel/test-util-inspect
+parallel/test-util-inspect-getters-accessing-this
+parallel/test-util-inspect-long-running
+parallel/test-util-inspect-namespace
+parallel/test-util-inspect-proxy
+parallel/test-util-types
+parallel/test-util-types-exists
+parallel/test-whatwg-url-canparse
+parallel/test-whatwg-url-custom-deepequal
+parallel/test-whatwg-url-custom-global
+parallel/test-whatwg-url-custom-href-side-effect
+parallel/test-whatwg-url-custom-properties
+parallel/test-whatwg-url-custom-searchparams
+parallel/test-whatwg-url-custom-searchparams-append
+parallel/test-whatwg-url-custom-searchparams-constructor
+parallel/test-whatwg-url-custom-searchparams-delete
+parallel/test-whatwg-url-custom-searchparams-entries
+parallel/test-whatwg-url-custom-searchparams-foreach
+parallel/test-whatwg-url-custom-searchparams-get
+parallel/test-whatwg-url-custom-searchparams-getall
+parallel/test-whatwg-url-custom-searchparams-has
+parallel/test-whatwg-url-custom-searchparams-inspect
+parallel/test-whatwg-url-custom-searchparams-keys
+parallel/test-whatwg-url-custom-searchparams-set
+parallel/test-whatwg-url-custom-searchparams-sort
+parallel/test-whatwg-url-custom-searchparams-stringifier
+parallel/test-whatwg-url-custom-searchparams-values
+parallel/test-whatwg-url-custom-tostringtag
+parallel/test-whatwg-url-invalidthis
+parallel/test-whatwg-url-override-hostname
+parallel/test-whatwg-url-properties
