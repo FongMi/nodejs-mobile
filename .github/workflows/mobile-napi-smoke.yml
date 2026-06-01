@@ -1,0 +1,80 @@
+name: Mobile NAPI Smoke
+
+# Guards against blocker B-1: missing NAPI symbols in the Android libnode.so.
+# Building + loading a real addon on an emulator is the stronger check
+# (see android-emulator-tests.yml); exporting the symbols is a cheaper proxy.
+
+on:
+  pull_request:
+    branches:
+      - main
+      - 'mobile/**'
+  workflow_dispatch:
+
+env:
+  SCCACHE_GHA_ENABLED: 'true'
+  ANDROID_NDK_VERSION: r27d
+  ANDROID_TARGET_SDK_VERSION: 24
+  LDFLAGS: '-Wl,-z,max-page-size=16384'
+
+permissions:
+  contents: read
+
+jobs:
+  napi-smoke-android:
+    runs-on: ubuntu-24.04
+    env:
+      TARGET_ARCH: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: '0'
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Install build utils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib g++-multilib
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: ${{ env.ANDROID_NDK_VERSION }}
+          add-to-path: false
+
+      - name: Build
+        env:
+          MY_ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          LDFLAGS: '-Wl,-z,max-page-size=16384'
+        run: |
+          ./tools/android_build.sh $MY_ANDROID_NDK_HOME $ANDROID_TARGET_SDK_VERSION $TARGET_ARCH
+          rm -rf ./out_android/libnode
+
+      # The stronger check — building + dlopen-ing a real NAPI addon (crc-native)
+      # on the emulator/simulator — is now implemented in the Tier-2 workflows
+      # (android-emulator-tests.yml / ios-simulator-tests.yml). This symbol-grep
+      # stays as a cheap every-PR tripwire for blocker B-1 (the Tier-2 gate runs
+      # only on the mobile-test label / cron / dispatch).
+      - name: Assert NAPI symbols are exported
+        run: |
+          # arm64 maps to the Android ABI folder name arm64-v8a (see android_build.sh).
+          # -D reads the DYNAMIC symbol table (.dynsym) — the actual export contract a
+          # dlopen()'d addon resolves against. (GNU nm: --defined-only, no BSD -U.)
+          nm -D --defined-only out_android/arm64-v8a/libnode.so > exported_symbols.txt
+          missing=0
+          for sym in napi_get_cb_info napi_create_string_utf8 napi_throw_error; do
+            if grep -qE "T $sym" exported_symbols.txt; then
+              echo "OK: $sym is exported"
+            else
+              echo "MISSING: $sym is not exported"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::One or more NAPI symbols are missing from libnode.so (blocker B-1)"
+            exit 1
+          fi

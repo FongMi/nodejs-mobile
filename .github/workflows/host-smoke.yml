@@ -1,0 +1,50 @@
+# Fast host smoke test: builds Node natively on the runner (no cross-compile)
+# and asserts the binary runs. Catches gross regressions in lib/internal and
+# src/api introduced by the mobile patches before the slower cross-compile
+# build-mobile workflow runs. Builds only the 'node' target with -j to stay
+# under 15 minutes.
+
+name: Host smoke
+
+on:
+  # push-only: a same-repo PR head also matches these globs, so adding
+  # pull_request would run every commit twice.
+  push:
+    branches: ['mobile/**', 'claude/**']
+  workflow_dispatch:
+
+env:
+  SCCACHE_GHA_ENABLED: 'true'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-host:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: '0'
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      # Python 3.12 (chosen by configure.py) doesn't have support for distutils
+      # https://github.com/nodejs/node-gyp/issues/2869 workaround
+      - name: Configure
+        run: |
+          python3.12 -m venv .
+          source bin/activate
+          python3.12 -m pip install setuptools
+          ./configure
+
+      - name: Build node target
+        run: |
+          source bin/activate
+          make -j"$(nproc)" node
+
+      - name: Smoke test
+        run: |
+          ./out/Release/node -e "console.log(process.versions); process.exit(0)"

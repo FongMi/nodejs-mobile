@@ -1,0 +1,156 @@
+name: Validate patch stack
+
+# Per-commit validation for the mobile patch stack.
+#
+# The full mobile builds in build-mobile.yml only run at HEAD. That can hide
+# regressions where intermediate patch N breaks a target but a later patch
+# happens to fix the same file by coincidence. This workflow walks every
+# commit between the patch-stack base recorded in
+# doc_mobile/upstream-base.txt and HEAD, and at each commit runs
+# `./android-configure` for an Android arm64 build.
+#
+# Why configure-only and Android-only:
+#
+# - `./android-configure` exercises the same code path as a production build
+#   (sets CC/CXX from the NDK, threads through GYP_DEFINES, calls
+#   `./configure --dest-os=android --cross-compiling --shared`). Almost every
+#   patch-stack regression we have hit historically (configure.py syntax,
+#   GYP target typos, missing source files, conditional indentation,
+#   common.gypi conflicts) shows up at this step without a full compile.
+# - It runs in ~1 min per commit on an ubuntu-24.04 runner, vs ~30 min for a
+#   full Android build. With 25 patches in a matrix that is 25 min wall time
+#   instead of 12 hours.
+# - iOS-only regressions still get caught at HEAD by the build-ios matrix in
+#   build-mobile.yml. They have historically been a small minority of
+#   patch-stack regressions.
+#
+# Pre-layer-A commits (those landing before the layer-A patches that
+# introduce ./android-configure) are walked but their configure step is
+# skipped automatically — there is no build system to exercise yet. Once
+# layer A lands, the same workflow exercises every subsequent commit.
+
+on:
+  # push-only: a same-repo PR head also matches these globs, so adding
+  # pull_request would run every commit twice. Walking the branch tip (push)
+  # is also the right thing here, vs the synthetic PR merge commit.
+  push:
+    branches:
+      - 'mobile/**'
+      - 'claude/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ANDROID_NDK_VERSION: r27d
+  ANDROID_TARGET_SDK_VERSION: '24'
+
+jobs:
+  list-commits:
+    runs-on: ubuntu-24.04
+    outputs:
+      commits: ${{ steps.list.outputs.commits }}
+      base: ${{ steps.list.outputs.base }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: list
+        name: Enumerate commits since the patch-stack base
+        run: |
+          set -euo pipefail
+          # The base of the patch stack is recorded in doc_mobile/upstream-base.txt.
+          # First non-comment, non-empty line is a SHA (or tag) reachable from
+          # HEAD; subsequent lines are informational (e.g. the upstream
+          # version label). Update this file as part of every rebase to a
+          # newer upstream release.
+          if [ ! -f doc_mobile/upstream-base.txt ]; then
+            echo "::error::doc_mobile/upstream-base.txt is missing."
+            echo "::error::See doc_mobile/UPGRADING.md for how to set it."
+            exit 1
+          fi
+          BASE=$(grep -Ev '^\s*(#|$)' doc_mobile/upstream-base.txt | head -n1 | tr -d '[:space:]')
+          if ! git rev-parse --verify --quiet "${BASE}^{commit}" >/dev/null; then
+            echo "::error::Patch-stack base '${BASE}' is not a valid commit in this repo."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${BASE}" HEAD; then
+            echo "::error::Patch-stack base '${BASE}' is not an ancestor of HEAD."
+            echo "::error::Did you forget to update doc_mobile/upstream-base.txt after a rebase?"
+            exit 1
+          fi
+          echo "Using patch-stack base: ${BASE}"
+          COMMITS=$(git log --reverse --format='%H' "${BASE}..HEAD" | jq -R . | jq -sc .)
+          NCOMMITS=$(echo "${COMMITS}" | jq 'length')
+          echo "Found ${NCOMMITS} mobile patch commits to validate."
+          if [ "${NCOMMITS}" = "0" ]; then
+            COMMITS='[]'
+          fi
+          {
+            echo "commits=${COMMITS}"
+            echo "base=${BASE}"
+          } >> "${GITHUB_OUTPUT}"
+
+  configure-each-commit:
+    needs: list-commits
+    if: ${{ needs.list-commits.outputs.commits != '[]' }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        commit: ${{ fromJson(needs.list-commits.outputs.commits) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.commit }}
+          fetch-depth: 1
+
+      - id: detect
+        name: Detect whether the build system is present at this commit
+        run: |
+          if [ -x ./android-configure ] && [ -f ./configure.py ]; then
+            echo "buildable=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "buildable=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::./android-configure not present at this commit (pre-layer-A); skipping configure step."
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.detect.outputs.buildable == 'true'
+        with:
+          python-version: '3.12'
+
+      # configure.py uses distutils which is removed in Python 3.12; this
+      # mirrors the workaround used in build-mobile.yml.
+      - name: Install Python build deps
+        if: steps.detect.outputs.buildable == 'true'
+        run: |
+          python3.12 -m pip install --upgrade pip
+          python3.12 -m pip install setuptools
+
+      - name: Setup Android NDK
+        if: steps.detect.outputs.buildable == 'true'
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: ${{ env.ANDROID_NDK_VERSION }}
+          add-to-path: false
+
+      - name: Configure Android arm64 (commit ${{ matrix.commit }})
+        if: steps.detect.outputs.buildable == 'true'
+        env:
+          MY_ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -eux
+          # android_configure.py shells out to ./configure with the right
+          # CC/CXX/GYP_DEFINES set from the NDK. We invoke the same script as
+          # the production Android build but stop after configure (no make).
+          ./android-configure "${MY_ANDROID_NDK_HOME}" "${ANDROID_TARGET_SDK_VERSION}" arm64
+
+      - name: Print commit subject for log readability
+        if: always()
+        run: |
+          git -c core.pager=cat log -1 --format='Validated: %h %s' ${{ matrix.commit }}
