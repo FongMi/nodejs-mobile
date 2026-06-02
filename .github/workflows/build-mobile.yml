@@ -216,6 +216,39 @@ jobs:
         with:
           name: node-android-*-${{ matrix.flavor }}
 
+  # B-1 tripwire: the shipped Android libnode.so must export the NAPI symbols a
+  # dlopen'd addon resolves against. Reuses combine-android's artifact (no
+  # rebuild — was a separate full build in mobile-napi-smoke.yml). The stronger
+  # real-addon dlopen+run check lives in android-emulator-tests.yml.
+  napi-smoke-android:
+    needs: combine-android
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nodejs-mobile-android
+          path: artifacts
+
+      - name: Assert NAPI symbols are exported
+        run: |
+          # arm64-v8a is the Android ABI folder for arm64 (see android_build.sh).
+          # -D reads the DYNAMIC symbol table (.dynsym) — the export contract a
+          # dlopen()'d addon resolves against. (GNU nm: --defined-only.)
+          nm -D --defined-only artifacts/bin/arm64-v8a/libnode.so > exported_symbols.txt
+          missing=0
+          for sym in napi_get_cb_info napi_create_string_utf8 napi_throw_error; do
+            if grep -qE "T $sym" exported_symbols.txt; then
+              echo "OK: $sym is exported"
+            else
+              echo "MISSING: $sym is not exported"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::One or more NAPI symbols are missing from libnode.so (blocker B-1)"
+            exit 1
+          fi
+
   combine-ios:
     strategy:
       fail-fast: false
