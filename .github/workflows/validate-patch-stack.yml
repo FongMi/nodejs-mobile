@@ -93,6 +93,12 @@ jobs:
             echo "base=${BASE}"
           } >> "${GITHUB_OUTPUT}"
 
+      # Enforce the minimal test-edit policy: no upstream test may have node:test
+      # stripped (it works in the mobile binary). Runs once at HEAD; needs the
+      # full history this job already checks out.
+      - name: Audit mobile test edits
+        run: ./tools/mobile-test/audit-test-edits.sh
+
   configure-each-commit:
     needs: list-commits
     if: ${{ needs.list-commits.outputs.commits != '[]' }}
