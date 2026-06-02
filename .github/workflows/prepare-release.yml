@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version X.Y.Z (e.g. 24.15.0)'
+        description: 'Release version X.Y.Z-R (e.g. 24.15.0-0)'
         required: true
       base:
         description: 'Branch to release from'
@@ -23,35 +23,44 @@ jobs:
   prepare:
     runs-on: ubuntu-24.04
     steps:
-      # Use a PAT (secret RELEASE_PAT), not the default GITHUB_TOKEN: a branch
-      # pushed with GITHUB_TOKEN does NOT trigger the Build / gate workflows, so
-      # the release PR would never get its required checks. The PAT must have
-      # `repo` + `workflow` scope.
+      # Mint a short-lived token from the release GitHub App, not the default
+      # GITHUB_TOKEN: a branch pushed with GITHUB_TOKEN does NOT trigger the
+      # Build / gate workflows, so the release PR would never get its required
+      # checks. The App needs Contents:write + Pull-requests:write; see
+      # doc_mobile/RELEASING.md "One-time setup".
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.base }}
-          token: ${{ secrets.RELEASE_PAT }}
+          token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
       - name: Validate version
         run: |
-          echo "${{ inputs.version }}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
-            || { echo "::error::version must be X.Y.Z"; exit 1; }
+          echo "${{ inputs.version }}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$' \
+            || { echo "::error::version must be X.Y.Z-R (e.g. 24.15.0-0)"; exit 1; }
 
       - name: Bump version-of-record + flag release
         env:
           V: ${{ inputs.version }}
         run: |
-          MAJOR=${V%%.*}; REST=${V#*.}; MINOR=${REST%%.*}; PATCH=${REST##*.}
+          REV=${V##*-}; XYZ=${V%-*}
+          MAJOR=${XYZ%%.*}; REST=${XYZ#*.}; MINOR=${REST%%.*}; PATCH=${REST##*.}
           f=src/node_mobile_version.h
           sed -i -E "s/(#define NODE_MOBILE_MAJOR_VERSION )[0-9]+/\1${MAJOR}/" "$f"
           sed -i -E "s/(#define NODE_MOBILE_MINOR_VERSION )[0-9]+/\1${MINOR}/" "$f"
           sed -i -E "s/(#define NODE_MOBILE_PATCH_VERSION )[0-9]+/\1${PATCH}/" "$f"
+          sed -i -E "s/(#define NODE_MOBILE_REVISION )[0-9]+/\1${REV}/" "$f"
           # Flag the build as a release so NODE_MOBILE_TAG drops the "-pre"
           # suffix (publish-release.yml unflags it in a follow-up commit).
           sed -i -E "s/(#define NODE_VERSION_IS_RELEASE )0/\11/" src/node_version.h
-          echo "Set mobile version to ${MAJOR}.${MINOR}.${PATCH}; flagged release."
-          grep -E "NODE_MOBILE_(MAJOR|MINOR|PATCH)_VERSION|NODE_VERSION_IS_RELEASE " "$f" src/node_version.h
+          echo "Set mobile version to ${MAJOR}.${MINOR}.${PATCH}-${REV}; flagged release."
+          grep -E "NODE_MOBILE_(MAJOR|MINOR|PATCH)_VERSION|NODE_MOBILE_REVISION|NODE_VERSION_IS_RELEASE " "$f" src/node_version.h
 
       - name: Prepend CHANGELOG entry
         env:
@@ -65,7 +74,7 @@ jobs:
 
       - name: Open release PR
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           V: ${{ inputs.version }}
           BASE: ${{ inputs.base }}
         run: |

@@ -24,10 +24,14 @@ binary) and `lite` (size-reduced; see the
 
 ## One-time setup (admin)
 
-1. **`RELEASE_PAT` secret** — a PAT with `repo` + `workflow` scope. The release
-   bot pushes the release branch with it; a branch pushed with the default
-   `GITHUB_TOKEN` does *not* trigger the Build/gate workflows, so its required
-   checks would never run.
+1. **Release GitHub App** — create a GitHub App (org or personal) with repository
+   permissions **Contents: write** + **Pull requests: write**, install it on this
+   repo, and store its App ID as the `RELEASE_APP_ID` **variable** and its private
+   key as the `RELEASE_APP_PRIVATE_KEY` **secret**. prepare/publish-release mint a
+   short-lived, repo-scoped token from it via `actions/create-github-app-token`.
+   (An App token is used, not the default `GITHUB_TOKEN`, because a branch pushed
+   with `GITHUB_TOKEN` does *not* trigger the Build/gate workflows — and an App
+   token is short-lived and scoped, unlike a long-lived personal PAT.)
 2. **`release` Environment** (Settings → Environments) with **required
    reviewers**. `publish-release.yml` runs its tag+publish job in this
    Environment, so it pauses for human approval before the irreversible step.

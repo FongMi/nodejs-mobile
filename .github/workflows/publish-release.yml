@@ -33,7 +33,8 @@ jobs:
           MA=$(grep -oE 'NODE_MOBILE_MAJOR_VERSION [0-9]+' "$f" | awk '{print $2}')
           MI=$(grep -oE 'NODE_MOBILE_MINOR_VERSION [0-9]+' "$f" | awk '{print $2}')
           PA=$(grep -oE 'NODE_MOBILE_PATCH_VERSION [0-9]+' "$f" | awk '{print $2}')
-          echo "version=${MA}.${MI}.${PA}" >> "$GITHUB_OUTPUT"
+          RE=$(grep -oE 'NODE_MOBILE_REVISION [0-9]+' "$f" | awk '{print $2}')
+          echo "version=${MA}.${MI}.${PA}-${RE}" >> "$GITHUB_OUTPUT"
           # Only a real release: NODE_VERSION_IS_RELEASE flagged AND the head
           # commit is a `release:` commit (avoids firing on unrelated edits).
           REL=$(grep -cE '#define NODE_VERSION_IS_RELEASE 1' src/node_version.h || true)
@@ -53,11 +54,20 @@ jobs:
     env:
       V: ${{ needs.guard.outputs.version }}
       SHA: ${{ github.sha }}
-      GH_TOKEN: ${{ secrets.RELEASE_PAT }}
     steps:
+      # Mint a short-lived token from the release GitHub App for the tag push and
+      # the GitHub Release (see doc_mobile/RELEASING.md "One-time setup"). Export
+      # it as GH_TOKEN so the gh steps below pick it up.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      - run: echo "GH_TOKEN=${{ steps.app-token.outputs.token }}" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.RELEASE_PAT }}
+          token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
       # "Tests pass before any release": branch protection requires the cheap

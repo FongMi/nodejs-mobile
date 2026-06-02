@@ -11,8 +11,9 @@
 # Prerequisites this does NOT do (also one-time, see doc_mobile/RELEASING.md):
 #   - Create a `release` Environment with required reviewers (Settings ->
 #     Environments) so publish-release.yml pauses for human approval.
-#   - Add a `RELEASE_PAT` secret (a PAT with repo+workflow scope) so the bot's
-#     release-branch push triggers the required-check workflows.
+#   - Install the release GitHub App + set RELEASE_APP_ID (variable) and
+#     RELEASE_APP_PRIVATE_KEY (secret) so the bot's release-branch push (via an
+#     App token, not GITHUB_TOKEN) triggers the required-check workflows.
 set -euo pipefail
 
 BRANCH="${1:-mobile/v24}"
