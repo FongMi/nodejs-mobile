@@ -129,7 +129,7 @@ echo test/parallel/test-buffer-alloc.js \
 
 ```sh
 # Android (after prepare-android-test.sh):
-./tools/mobile-test/addon/build-android-addon.sh "$ANDROID_NDK_HOME" x86_64 out_android/x86_64 ./crcnative.node
+./tools/mobile-test/addon/build-android-addon.sh "$ANDROID_NDK_HOME" x86_64 out_android/x86_64 out_android/libnode/include/node ./crcnative.node
 ./tools/mobile-test/addon/run-android-addon.sh ./crcnative.node
 # iOS simulator (after prepare-ios-sim-tests.sh): see tools/mobile-test/addon/build-ios-addon.sh + run-ios-addon.sh
 ```

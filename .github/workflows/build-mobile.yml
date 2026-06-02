@@ -200,7 +200,8 @@ jobs:
           # not the shared libnode/ header dir.
           for d in out_android/*/; do
             [ "$(basename "$d")" = "libnode" ] && continue
-            cp -R "$d" artifacts/bin/
+            # strip the trailing slash so both GNU and BSD cp create bin/<abi>/
+            cp -R "${d%/}" artifacts/bin/
           done
           cp -R out_android/libnode/include/* artifacts/include
 

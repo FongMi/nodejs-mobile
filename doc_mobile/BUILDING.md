@@ -81,7 +81,7 @@ Output: `out_android/<abi>/libnode.so` for each ABI (`armeabi-v7a`, `arm64-v8a`,
 To configure and build a single architecture manually instead:
 
 ```sh
-source ./android-configure <ndk-path> <sdk-version> <arch>
+./android-configure <ndk-path> <sdk-version> <arch>
 make
 # -> out/Release/lib.target/libnode.so
 ```
