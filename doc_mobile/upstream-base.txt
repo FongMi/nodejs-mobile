@@ -10,5 +10,5 @@
 # Subsequent non-comment lines are informational — typically the
 # human-readable upstream version label.
 
-v24.15.0
-Upstream Node.js v24.15.0 (LTS, "Krypton")
+v24.20.0
+Upstream Node.js v24.20.0 (LTS, "Krypton")

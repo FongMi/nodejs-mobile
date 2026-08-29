@@ -11,7 +11,7 @@ out-of-tree patches-only repo sketched in
 All three read the patch-stack base from
 [`upstream-base.txt`](./upstream-base.txt) using the exact same parse as the
 CI workflow `.github/workflows/validate-patch-stack.yml`: the first
-non-comment, non-empty line, whitespace-stripped. Today that is `v24.15.0`.
+non-comment, non-empty line, whitespace-stripped. Today that is `v24.20.0`.
 
 ## The scripts
 
@@ -44,7 +44,7 @@ PATCHES_ONLY_PROPOSAL.md.
 The "prepare" half: layer the series onto a clean upstream checkout.
 
 ```sh
-git clone --depth 1 --branch v24.15.0 https://github.com/nodejs/node.git ./node-build
+git clone --depth 1 --branch v24.20.0 https://github.com/nodejs/node.git ./node-build
 scripts/mobile/apply-patches.sh ./node-build ./mobile-patches-out
 ```
 
@@ -78,7 +78,7 @@ scripts/mobile/verify-patches.sh
 ```
 
 1. Calls `export-patches.sh` into a scratch dir (or `patches_dir` if given).
-2. `git worktree add --detach <tmp> v24.15.0` — a throwaway checkout that
+2. `git worktree add --detach <tmp> v24.20.0` — a throwaway checkout that
    never touches your branches.
 3. Calls `apply-patches.sh` against that worktree.
 4. Compares `git rev-parse HEAD^{tree}` of the worktree against `HEAD^{tree}`
@@ -115,7 +115,7 @@ scripts/mobile/export-patches.sh /tmp/seed-patches
 mkdir -p patches
 cp /tmp/seed-patches/*.patch /tmp/seed-patches/series patches/
 cp <this-repo>/doc_mobile/upstream-base.txt .
-git add patches upstream-base.txt && git commit -m "seed patch series from v24.15.0"
+git add patches upstream-base.txt && git commit -m "seed patch series from v24.20.0"
 ```
 
 Its `prepare.sh` then clones `nodejs/node` at `$(cat upstream-base.txt)`,

@@ -6,6 +6,7 @@
 </tr>
 <tr>
 <td>
+<a href="#24.20.0-0">24.20.0-0</a><br/>
 <a href="#24.15.0-0">24.15.0-0</a><br/>
 <a href="#18.20.4">18.20.4</a><br/>
 <a href="#18.17.3">18.17.3</a><br/>
@@ -34,8 +35,22 @@
 </tr>
 </table>
 
+<a id="24.20.0-0"></a>
+## 2026-08-29, Version 24.20.0-0 (Current)
+
+Rebased the complete mobile patch stack on the upstream `v24.20.0` LTS tag.
+
+### Notable Changes
+
+* **Engine:** Node.js 24.20.0.
+* **Android:** retains the NDK r27d build, N-API export gate, emulator smoke
+  test, and 16 KB ELF LOAD alignment check.
+* **Maintenance:** preserves the linear 51-commit patch stack and updates its
+  recorded upstream base so every mobile commit remains independently
+  configure-testable.
+
 <a id="24.15.0-0"></a>
-## 2026-06-01, Version 24.15.0-0 (Current)
+## 2026-06-01, Version 24.15.0-0
 
 First release on the Node.js 24 line. The mobile patch stack is fully rebased on
 the upstream `v24.15.0` tag (linear history, no merge commit; V8 13.6).
