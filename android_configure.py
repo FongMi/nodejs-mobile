@@ -89,6 +89,11 @@ extra_flags = ""
 if flavor == "lite":
     intl = "none"
     extra_flags = " --without-amaro --without-inspector --without-sqlite"
+    # V8 pointer compression reduces heap/object footprint on 64-bit Android.
+    # It changes the V8 C++ ABI and caps a single isolate at 4 GB, so keep it
+    # confined to the opt-in lite flavor and ship that flavor's config.gypi.
+    if DEST_CPU in ("arm64", "x64"):
+        extra_flags += " --experimental-enable-pointer-compression"
     # gc-sections (lite only, so the full binary's codegen is untouched).
     GYP_DEFINES += " node_mobile_lite=1"
 

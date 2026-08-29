@@ -50,6 +50,7 @@ patch-stack surface):
 | `--without-sqlite` | for consumers using the `better-sqlite3` addon, not `node:sqlite` |
 | `--with-intl=none` (no ICU) | for consumers that use no `Intl.*` — verify per consumer (e.g. valibot's only `Intl` user, `Intl.Segmenter`, sits behind grapheme validators that may be unused); also shipped on Node 18 with `intl=none` |
 | `-ffunction-sections`/`--gc-sections` | dead-code strip; no behavior change |
+| **Android 64-bit only:** V8 pointer compression | reduces object/heap footprint; limits each isolate to 4 GB and changes the V8 C++ ABI, so native addons must be built against the matching lite `config.gypi` |
 | **iOS only:** `--v8-lite-mode` | drops the compiled JIT + V8 WASM engine, both **dead on iOS** (it runs jitless; undici's WASM is served by the polywasm JS shim). This is the big lever. |
 
 Measured shipping sizes (arm64, after symbol strip):
@@ -57,6 +58,8 @@ Measured shipping sizes (arm64, after symbol strip):
 - **iOS:** ~63 MB (full) → **~44.5 MB (lite)**, a ~29% cut (mostly `--v8-lite-mode`).
 - **Android:** smaller via the feature drops + gc-sections, but no
   `--v8-lite-mode` (Android keeps the JIT and V8's native WASM for undici).
+  The arm64 and x86_64 lite builds additionally use V8 pointer compression;
+  32-bit ARM is unchanged because V8 only supports it on 64-bit targets.
 
 `build-id` (`-Wl,--build-id=sha1`) is emitted on the Android `libnode.so` in
 **both** flavors so Sentry can symbolicate native crashes. The standing
