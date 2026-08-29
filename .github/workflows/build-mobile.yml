@@ -92,6 +92,21 @@ jobs:
         run: |
           ./tools/android_build.sh $MY_ANDROID_NDK_HOME $ANDROID_TARGET_SDK_VERSION $TARGET_ARCH
 
+      # Ship runtime binaries, not the very large compiler/debug symbol payload.
+      # Run this after both cache hits and fresh builds so the public artifact is
+      # deterministic even when an older unstripped out_android cache is restored.
+      - name: Strip Android runtime
+        env:
+          MY_ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          STRIP="$MY_ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          mapfile -d '' LIBS < <(find out_android -type f -name libnode.so -print0)
+          (( ${#LIBS[@]} > 0 )) || { echo "No libnode.so found under out_android" >&2; exit 1; }
+          for SO in "${LIBS[@]}"; do
+            "$STRIP" --strip-unneeded "$SO"
+            stat --printf='%n %s bytes\n' "$SO"
+          done
+
       # NAPI/addon headers are static src/ + deps/ files (no build output, no
       # toolchain), so stage them unconditionally — this survives a libnode cache
       # hit (where the Build step is skipped) and lets combine-android just merge
