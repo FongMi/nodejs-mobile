@@ -17,6 +17,8 @@ on:
 permissions:
   contents: write
   actions: read    # read Build/Tier-2 run status + download release artifacts
+  attestations: write
+  id-token: write
 
 jobs:
   guard:
@@ -25,7 +27,7 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       is_release: ${{ steps.v.outputs.is_release }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
       - name: Parse version + confirm release commit
         id: v
         run: |
@@ -65,7 +67,7 @@ jobs:
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       - run: echo "GH_TOKEN=${{ steps.app-token.outputs.token }}" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
@@ -87,16 +89,6 @@ jobs:
             echo "Tier-2 $wf green for $SHA (run $ok)"
           done
 
-      - name: Create + push tag
-        run: |
-          TAG="nodejs-mobile-${V}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "::error::tag $TAG already exists"; exit 1
-          fi
-          git tag -a "$TAG" -m "nodejs-mobile ${V}" "$SHA"
-          git push origin "$TAG"
-          echo "Tagged $TAG at $SHA"
-
       # The release-commit push triggers ONE matrix Build that compiles BOTH
       # flavors (full + lite); the Tier-2 gate verified above already consumed
       # its artifacts, so it is green by now. Locate that run for the artifact
@@ -113,38 +105,95 @@ jobs:
           done
           [ -n "$run_id" ] || { echo "::error::no green (full+lite) Build run for $SHA"; exit 1; }
           echo "Build $run_id green for $SHA (both flavors via matrix)"
+          echo "BUILD_RUN_ID=$run_id" >> "$GITHUB_ENV"
 
       - name: Download all flavor artifacts
         run: |
           mkdir -p dl
-          for run in $(gh run list --repo "$GITHUB_REPOSITORY" --workflow build-mobile.yml --commit "$SHA" \
-                         --status success --json databaseId -q '.[].databaseId'); do
-            gh run download "$run" --repo "$GITHUB_REPOSITORY" --dir "dl/$run" || true
-          done
+          gh run download "$BUILD_RUN_ID" --repo "$GITHUB_REPOSITORY" --dir "dl/$BUILD_RUN_ID"
           # Flatten: each combined artifact dir contains bin/ + include/ (android)
           # or NodeMobile.xcframework + include/ (ios).
           find dl -maxdepth 2 -type d | sort
 
-      - name: Package release zips
+      - name: Package deterministic release zips
         run: |
           mkdir -p out
-          pack() { # $1 = artifact name, $2 = zip basename
-            local src; src=$(find dl -type d -name "$1" | head -1)
-            [ -n "$src" ] || { echo "::warning::artifact $1 missing — skipping $2"; return; }
-            ( cd "$src" && zip -qr "$GITHUB_WORKSPACE/out/$2-${V}.zip" . )
-            echo "packed $2-${V}.zip"
+          UPSTREAM_REF=$(grep -Ev '^\s*(#|$)' doc_mobile/upstream-base.txt | head -n1 | tr -d '[:space:]')
+          UPSTREAM_SHA=$(git rev-parse "${UPSTREAM_REF}^{commit}")
+          ANDROID_NDK_REVISION=$(sed -n 's/^  ANDROID_NDK_REVISION: //p' .github/workflows/build-mobile.yml)
+          ANDROID_API=$(sed -n 's/^  ANDROID_TARGET_SDK_VERSION: //p' .github/workflows/build-mobile.yml)
+          [ -n "$ANDROID_NDK_REVISION" ] && [ -n "$ANDROID_API" ]
+          pack() { # $1 = artifact name, $2 = target, $3 = flavor
+            local src suffix=""
+            local -a matches args
+            mapfile -t matches < <(find dl -type d -name "$1" | sort)
+            [ "${#matches[@]}" -eq 1 ] || { echo "::error::expected one $1 artifact, found ${#matches[@]}"; exit 1; }
+            src="${matches[0]}"
+            if [ "$3" = lite ]; then suffix="-lite"; fi
+            args=(
+              --source "$src"
+              --output "out/nodejs-mobile-${2}${suffix}-${V}.zip"
+              --target "$2"
+              --flavor "$3"
+              --version "$V"
+              --repository "$GITHUB_REPOSITORY"
+              --source-commit "$SHA"
+              --upstream-ref "$UPSTREAM_REF"
+              --upstream-commit "$UPSTREAM_SHA"
+              --build-run-id "$BUILD_RUN_ID"
+            )
+            if [ "$2" = android ]; then
+              args+=(--android-ndk-revision "$ANDROID_NDK_REVISION" --android-api "$ANDROID_API")
+            fi
+            python3 tools/mobile-release/package-artifact.py "${args[@]}"
           }
-          pack nodejs-mobile-android       nodejs-mobile-android
-          pack nodejs-mobile-android-lite  nodejs-mobile-android-lite
-          pack nodejs-mobile-ios           nodejs-mobile-ios
-          pack nodejs-mobile-ios-lite      nodejs-mobile-ios-lite
+          pack nodejs-mobile-android       android full
+          pack nodejs-mobile-android-lite  android lite
+          pack nodejs-mobile-ios           ios full
+          pack nodejs-mobile-ios-lite      ios lite
+          ( cd out && sha256sum *.zip > SHA256SUMS )
           ls -la out
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.17.7
+        with:
+          path: dl
+          format: spdx-json
+          output-file: out/SBOM.spdx.json
+          artifact-name: nodejs-mobile-${{ env.V }}-sbom.spdx.json
+          upload-artifact: false
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.8.1
+
+      - name: Sign release archives with Sigstore
+        run: |
+          for archive in out/*.zip; do
+            cosign sign-blob --yes --bundle "${archive}.sigstore.json" "$archive"
+          done
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v2.4.0
+        with:
+          subject-path: out/*.zip
+
+      # Keep the tag reversible until every payload, digest, SBOM, signature and
+      # attestation has been generated successfully.
+      - name: Create + push tag
+        run: |
+          TAG="nodejs-mobile-${V}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::tag $TAG already exists"; exit 1
+          fi
+          git tag -a "$TAG" -m "nodejs-mobile ${V}" "$SHA"
+          git push origin "$TAG"
+          echo "Tagged $TAG at $SHA"
 
       - name: Create GitHub Release
         run: |
           TAG="nodejs-mobile-${V}"
           NOTES=$(awk '/^## /{c++} c==1{print} c==2{exit}' doc_mobile/CHANGELOG.md)
-          gh release create "$TAG" out/*.zip \
+          gh release create "$TAG" out/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "nodejs-mobile ${V}" \
             --notes "${NOTES:-Release ${V}. See doc_mobile/CHANGELOG.md.}"

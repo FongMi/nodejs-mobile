@@ -70,7 +70,11 @@ binary) and `lite` (size-reduced; see the
 6. **Approve the `release` Environment.** Merging fires `publish-release.yml`; it
    waits for your approval, then tags `nodejs-mobile-X.Y.Z`, builds **both
    flavors**, and creates the GitHub Release with four zips:
-   `nodejs-mobile-{android,ios}{,-lite}-X.Y.Z.zip`.
+   `nodejs-mobile-{android,ios}{,-lite}-X.Y.Z.zip`. Each archive is
+   deterministic and contains `runtime-manifest.json` plus `SHA256SUMS`; the
+   release also publishes an SPDX SBOM, top-level SHA-256 list, and Sigstore
+   bundles. GitHub build provenance is attached to all four archives. The tag
+   is pushed only after those payloads and attestations are ready.
 7. **Post-release:** open a follow-up PR unflagging `NODE_VERSION_IS_RELEASE`
    (`src: unflag NODE_VERSION_IS_RELEASE`), and bump the consumer plugins
    (`nodejs-mobile-react-native`, `-cordova`).
