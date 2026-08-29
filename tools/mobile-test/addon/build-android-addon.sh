@@ -36,7 +36,8 @@ esac
   "$HERE/binding.c" "$HERE/crc32.c" \
   -o "$OUT" \
   -L "$LIBNODE_DIR" -lnode \
-  -Wl,-z,max-page-size=16384
+  -Wl,-z,max-page-size=16384 \
+  -Wl,-z,common-page-size=16384
 
 echo "Built addon: $OUT"
 # Sanity: addon exports the N-API registration entry + imports napi_* from libnode.
