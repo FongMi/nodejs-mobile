@@ -424,12 +424,14 @@ TrustStatus IsTrustDictionaryTrustedForPolicy(CFDictionaryRef trust_dict,
                ? TrustStatus::TRUSTED
                : TrustStatus::UNSPECIFIED;
   }
-#endif // TARGET_OS_OSX
 
   // kSecTrustSettingsResultTrustAsRoot can only be applied to non-root certs.
   return (trust_settings_result == kSecTrustSettingsResultTrustAsRoot)
              ? TrustStatus::TRUSTED
              : TrustStatus::UNSPECIFIED;
+#else
+  return TrustStatus::UNSPECIFIED;
+#endif  // TARGET_OS_OSX
 }
 
 TrustStatus IsTrustSettingsTrustedForPolicy(CFArrayRef trust_settings,
