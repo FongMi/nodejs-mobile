@@ -52,6 +52,7 @@ declare -a outputs_common=(
   "libncrypto.a"
   "libnghttp2.a"
   "libnode.a"
+  "libnode_base.a"
   "libopenssl.a"
   "libsimdjson.a"
   "libsimdutf.a"
