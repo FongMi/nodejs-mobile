@@ -12,7 +12,9 @@ env:
   SCCACHE_GHA_ENABLED: 'true'
   SCCACHE_IDLE_TIMEOUT: '0'   # keep the sccache server alive through long builds
   ANDROID_NDK_VERSION: r27d
+  ANDROID_NDK_REVISION: 27.3.13750724
   ANDROID_TARGET_SDK_VERSION: 24
+  ANDROID_ELF_LDFLAGS: '-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384'
   # Flavor is a per-job matrix dimension ([full, lite]) so every Build produces
   # BOTH the shipped full binary and the size-reduced lite binary, and the
   # Tier-2 gate covers both (see doc_mobile/README.md "The lite variant"). Each
@@ -64,9 +66,17 @@ jobs:
           ndk-version: ${{ env.ANDROID_NDK_VERSION }}
           add-to-path: false
 
+      - name: Verify Android NDK revision
+        env:
+          MY_ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          actual=$(sed -n 's/^Pkg.Revision = //p' "$MY_ANDROID_NDK_HOME/source.properties")
+          [ "$actual" = "$ANDROID_NDK_REVISION" ] || { echo "::error::Expected NDK $ANDROID_NDK_REVISION, got $actual"; exit 1; }
+
       # Key the built libnode on the git tree of everything that actually feeds
-      # the build (src/deps/lib + the build files), computed from git object IDs
-      # (instant + exact, vs hashFiles over the huge deps/ tree). Test harness,
+      # the build (src/deps/lib + the build files + pinned Android settings),
+      # computed from git object IDs/values (instant + exact, vs hashFiles over
+      # the huge deps/ tree). Test harness,
       # CI and docs are excluded, so a test-infra-only push reuses the binary
       # instead of paying the 1.5-3h compile.
       - name: Compute libnode cache key
@@ -74,6 +84,7 @@ jobs:
         run: |
           H=$( { git rev-parse "HEAD:src" "HEAD:deps" "HEAD:lib" "HEAD:tools/v8_gypfiles" "HEAD:tools/gyp" "HEAD:tools/icu"; \
                  git hash-object node.gyp node.gypi common.gypi configure configure.py android-configure android_configure.py tools/android_build.sh tools/copy_libnode_headers.sh; \
+                 printf '%s\n' "$ANDROID_NDK_REVISION" "$ANDROID_TARGET_SDK_VERSION" "$ANDROID_ELF_LDFLAGS"; \
                } | git hash-object --stdin )
           echo "key=$H" >> "$GITHUB_OUTPUT"
 
@@ -88,14 +99,66 @@ jobs:
         if: steps.libnode-cache.outputs.cache-hit != 'true'
         env:
           MY_ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          LDFLAGS: '-Wl,-z,max-page-size=16384'
+          LDFLAGS: ${{ env.ANDROID_ELF_LDFLAGS }}
         run: |
           ./tools/android_build.sh $MY_ANDROID_NDK_HOME $ANDROID_TARGET_SDK_VERSION $TARGET_ARCH
 
-      # NAPI/addon headers are static src/ + deps/ files (no build output, no
-      # toolchain), so stage them unconditionally — this survives a libnode cache
-      # hit (where the Build step is skipped) and lets combine-android just merge
-      # them instead of re-running ./configure + an NDK install.
+      # Ship runtime binaries, not the very large compiler/debug symbol payload.
+      # Run this after both cache hits and fresh builds so the public artifact is
+      # deterministic even when an older unstripped out_android cache is restored.
+      - name: Strip Android runtime
+        env:
+          MY_ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          STRIP="$MY_ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          mapfile -d '' LIBS < <(find out_android -type f -name libnode.so -print0)
+          (( ${#LIBS[@]} > 0 )) || { echo "No libnode.so found under out_android" >&2; exit 1; }
+          for SO in "${LIBS[@]}"; do
+            "$STRIP" --strip-unneeded "$SO"
+            stat --printf='%n %s bytes\n' "$SO"
+          done
+
+      - name: Audit Android runtime
+        env:
+          MY_ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          case "$TARGET_ARCH" in
+            arm) ABI=armeabi-v7a; NDK_TRIPLE=arm-linux-androideabi ;;
+            arm64) ABI=arm64-v8a; NDK_TRIPLE=aarch64-linux-android ;;
+            x86_64) ABI=x86_64; NDK_TRIPLE=x86_64-linux-android ;;
+            *) echo "::error::unsupported TARGET_ARCH=$TARGET_ARCH"; exit 1 ;;
+          esac
+          LIB_DIR="out_android/$ABI"
+          NDK_LIB_DIR="$MY_ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/$NDK_TRIPLE"
+          READELF="$MY_ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          test -f "$LIB_DIR/libnode.so" && test -f "$LIB_DIR/libc++_shared.so"
+          cmp "$NDK_LIB_DIR/libc++_shared.so" "$LIB_DIR/libc++_shared.so"
+          "$READELF" -dW "$LIB_DIR/libnode.so" | grep -F 'Shared library: [libc++_shared.so]'
+
+          check_16k_load_alignment() {
+            local so="$1" alignment
+            local -a alignments
+            mapfile -t alignments < <("$READELF" -lW "$so" | awk '$1 == "LOAD" { print $NF }')
+            [ "${#alignments[@]}" -gt 0 ] || { echo "::error::No LOAD segments in $so"; return 1; }
+            for alignment in "${alignments[@]}"; do
+              if (( alignment < 0x4000 )); then
+                echo "::error::$so has LOAD alignment $alignment; expected at least 0x4000"
+                return 1
+              fi
+            done
+            echo "$so LOAD alignments: ${alignments[*]}"
+          }
+
+          check_16k_load_alignment "$LIB_DIR/libnode.so"
+          if [ "$TARGET_ARCH" != arm ]; then
+            check_16k_load_alignment "$LIB_DIR/libc++_shared.so"
+          else
+            echo "32-bit ARM libc++ alignment is not a 16 KB-device gate"
+          fi
+
+      # Most NAPI/addon headers are static src/ + deps/ files, so stage them
+      # unconditionally. Per-ABI config.gypi files remain in the cached build
+      # output created by android_build.sh.
       - name: Stage NAPI/addon headers
         run: ./tools/copy_libnode_headers.sh android
 
@@ -184,9 +247,9 @@ jobs:
 
       # Pull only THIS flavor's per-arch artifacts (node-android-<arch>-<flavor>);
       # the trailing -<flavor> keeps the full and lite combine legs from mixing.
-      # Each carries the per-abi libnode.so plus an identical out_android/libnode/
-      # include tree (staged in build-android), so no NDK or ./configure is needed
-      # here — just merge. (merge-multiple overwrites the duplicate header tree.)
+      # Each carries per-ABI libnode.so + matching libc++_shared.so, a unique
+      # config.gypi, and an identical include tree. No NDK/configure is needed
+      # here. (merge-multiple only overwrites the identical header tree.)
       - uses: actions/download-artifact@v4
         with:
           pattern: node-android-*-${{ matrix.flavor }}
@@ -195,7 +258,7 @@ jobs:
 
       - name: Combine
         run: |
-          mkdir -p artifacts/bin artifacts/include
+          mkdir -p artifacts/bin artifacts/config artifacts/include
           # Copy the per-abi binary dirs (armeabi-v7a/, arm64-v8a/, x86_64/),
           # not the shared libnode/ header dir.
           for d in out_android/*/; do
@@ -203,7 +266,14 @@ jobs:
             # strip the trailing slash so both GNU and BSD cp create bin/<abi>/
             cp -R "${d%/}" artifacts/bin/
           done
+          cp -R out_android/libnode/config/* artifacts/config/
           cp -R out_android/libnode/include/* artifacts/include
+          for abi in armeabi-v7a arm64-v8a x86_64; do
+            test -f "artifacts/bin/$abi/libnode.so"
+            test -f "artifacts/bin/$abi/libc++_shared.so"
+            test -f "artifacts/config/$abi/config.gypi"
+          done
+          ( cd artifacts && find . -type f ! -name ARTIFACT_SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > ARTIFACT_SHA256SUMS )
 
       - uses: actions/upload-artifact@v4
         with:
@@ -338,16 +408,17 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      # x86_64 runs natively on the runner CPU, so the emulator is fast. The
-      # libnode.so NEEDs libc++_shared.so, so stage that next to the embedder.
+      # x86_64 runs natively on the runner CPU, so the emulator is fast. Use
+      # the libc++ runtime shipped with the artifact. Comparing it to the
+      # installed pinned NDK catches a mismatched or stale runtime immediately.
       - name: Build smoke embedder (x86_64)
         env:
           NDK: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           ./tools/mobile-test/smoke/build-android-embedder.sh \
             "$NDK" x86_64 "$PWD/artifacts/bin/x86_64" "$PWD/node_smoke"
-          cp "$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/libc++_shared.so" \
-            "$PWD/libc++_shared.so"
+          cmp "$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/libc++_shared.so" \
+            "$PWD/artifacts/bin/x86_64/libc++_shared.so"
 
       - name: Run smoke on emulator
         uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
@@ -362,7 +433,7 @@ jobs:
           # invocation must be a single line (no backslash continuations).
           script: |
             adb wait-for-device
-            ./tools/mobile-test/smoke/run-android-smoke.sh "$PWD/node_smoke" "$PWD/artifacts/bin/x86_64/libnode.so" "$PWD/libc++_shared.so"
+            ./tools/mobile-test/smoke/run-android-smoke.sh "$PWD/node_smoke" "$PWD/artifacts/bin/x86_64/libnode.so" "$PWD/artifacts/bin/x86_64/libc++_shared.so"
 
   # Tier 1 on-device smoke for iOS: install the testnode app on a booted
   # simulator and run a console.log via the freshly built NodeMobile.xcframework.

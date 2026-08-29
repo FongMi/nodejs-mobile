@@ -29,6 +29,7 @@ esac
   "$SCRIPT_DIR/node_embedder.cpp" \
   -o "$OUT" \
   -L "$LIBNODE_DIR" -lnode \
-  -Wl,-z,max-page-size=16384
+  -Wl,-z,max-page-size=16384 \
+  -Wl,-z,common-page-size=16384
 
 echo "Built embedder: $OUT"

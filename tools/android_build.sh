@@ -40,6 +40,20 @@ BUILD_ARCH() {
     # Use the Android NDK ABI name.
     TARGET_ARCH_FOLDER="arm64-v8a"
   fi
+
+  if [ "$TARGET_ARCH" == "arm" ]; then
+    NDK_TRIPLE="arm-linux-androideabi"
+  elif [ "$TARGET_ARCH" == "arm64" ]; then
+    NDK_TRIPLE="aarch64-linux-android"
+  elif [ "$TARGET_ARCH" == "x86" ]; then
+    NDK_TRIPLE="i686-linux-android"
+  elif [ "$TARGET_ARCH" == "x86_64" ]; then
+    NDK_TRIPLE="x86_64-linux-android"
+  else
+    echo "Unsupported Android architecture: $TARGET_ARCH"
+    exit 1
+  fi
+
   mkdir -p "out_android/$TARGET_ARCH_FOLDER/"
   OUTPUT1="out/Release/lib.target/libnode.so"
   OUTPUT2="out/Release/obj.target/libnode.so"
@@ -51,6 +65,25 @@ BUILD_ARCH() {
     echo "Could not find libnode.so file after compilation"
     exit 1
   fi
+
+  # libnode.so depends on the exact libc++ runtime shipped by its NDK. Include
+  # that runtime per ABI so consumers do not have to guess which revision to
+  # package. Keep the NDK file byte-for-byte intact for hash verification.
+  mapfile -d '' NDK_PREBUILT_DIRS < <(find "$ANDROID_NDK_PATH/toolchains/llvm/prebuilt" -mindepth 1 -maxdepth 1 -type d -print0)
+  if [ "${#NDK_PREBUILT_DIRS[@]}" -ne 1 ]; then
+    echo "Expected exactly one NDK host prebuilt directory, found ${#NDK_PREBUILT_DIRS[@]}"
+    exit 1
+  fi
+  LIBCXX="${NDK_PREBUILT_DIRS[0]}/sysroot/usr/lib/$NDK_TRIPLE/libc++_shared.so"
+  if [ ! -f "$LIBCXX" ]; then
+    echo "Could not find the NDK libc++ runtime at $LIBCXX"
+    exit 1
+  fi
+  cp "$LIBCXX" "out_android/$TARGET_ARCH_FOLDER/libc++_shared.so"
+
+  # config.gypi is target- and flavor-specific. Store it beside an ABI key
+  # instead of placing one ambiguous file in the shared header directory.
+  source "$SCRIPT_DIR/copy_libnode_headers.sh" android "$TARGET_ARCH_FOLDER"
 }
 
 if [ $# -eq 2 ]; then
@@ -67,6 +100,6 @@ else
   BUILD_ARCH
 fi
 
-source $SCRIPT_DIR/copy_libnode_headers.sh android
+source "$SCRIPT_DIR/copy_libnode_headers.sh" android
 
 cd "$ROOT"

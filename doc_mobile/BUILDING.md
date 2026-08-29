@@ -75,8 +75,26 @@ git checkout mobile/v24
 ./tools/android_build.sh ~/Android/Sdk/ndk/27.3.13750724 24
 ```
 
-Output: `out_android/<abi>/libnode.so` for each ABI (`armeabi-v7a`, `arm64-v8a`,
-`x86_64`).
+Output: `out_android/<abi>/{libnode.so,libc++_shared.so}` for each ABI
+(`armeabi-v7a`, `arm64-v8a`, `x86_64`). The C++ runtime is copied unchanged
+from the selected NDK; package that matching file unless the application already
+ships the same or a compatibility-reviewed newer libc++ runtime.
+
+Native-addon headers are staged under `out_android/libnode/include/node`.
+Because `config.gypi` varies by ABI and by full/lite flavor, generated configs
+are kept separately under `out_android/libnode/config/<abi>/config.gypi` rather
+than exposing one ambiguous shared file.
+
+For a node-gyp-style addon build, copy the selected ABI's `config.gypi` into a
+temporary copy of `include/node/` before invoking node-gyp. Do not reuse a full
+config for a lite addon (or the reverse): 64-bit lite uses a different V8 C++
+ABI because pointer compression is enabled. Pure N-API addons do not depend on
+that V8 ABI, but should still use the matching target config.
+
+CI passes both `-z max-page-size=16384` and `-z common-page-size=16384` for NDK
+r27, then audits every `libnode.so` LOAD segment. It also audits the matching
+64-bit `libc++_shared.so` files; 32-bit ARM libc++ is not loaded on 16 KB-page
+arm64 devices and retains the NDK's native alignment.
 
 To configure and build a single architecture manually instead:
 
