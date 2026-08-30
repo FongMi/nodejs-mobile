@@ -5,7 +5,7 @@ on:
   # pull_request would run every commit twice. (Add a fork-only-guarded
   # pull_request if external contributors ever open PRs.)
   push:
-    branches: [main, icu, 'mobile/**', 'claude/**', 'release/**']
+    branches: [main, fongmi, icu, 'mobile/**', 'claude/**', 'release/**']
   workflow_dispatch:
 
 env:
@@ -15,13 +15,8 @@ env:
   ANDROID_NDK_REVISION: 27.3.13750724
   ANDROID_TARGET_SDK_VERSION: 24
   ANDROID_ELF_LDFLAGS: '-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384'
-  # Flavor is a per-job matrix dimension ([full, lite]) so every Build produces
-  # BOTH the shipped full binary and the size-reduced lite binary, and the
-  # Tier-2 gate covers both (see doc_mobile/README.md "The lite variant"). Each
-  # job derives NODEJS_MOBILE_FLAVOR + FLAVOR_SUFFIX from matrix.flavor (matrix
-  # isn't visible at workflow-env scope). FLAVOR_SUFFIX ('' for full, '-lite'
-  # for lite) keeps caches + the public combined artifacts distinct so the full
-  # path stays byte-for-byte unchanged.
+  # The fongmi branch builds only the two lite-runtime ABIs shipped by TV.
+  # Other branches retain the upstream full/lite and emulator coverage.
   # NOTE: the Android 16 KB-page LDFLAGS is set per-job on build-android only.
   # Setting it globally leaks -Wl,-z,max-page-size into the iOS link, which
   # Apple's ld rejects ("ld: unknown options: -z").
@@ -34,11 +29,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        flavor: [full, lite]
-        config:
-          - { os: ubuntu-24.04, target_arch: arm }
-          - { os: ubuntu-24.04, target_arch: arm64 }
-          - { os: ubuntu-24.04, target_arch: x86_64 }
+        flavor: ${{ fromJSON(github.ref_name == 'fongmi' && '["lite"]' || '["full","lite"]') }}
+        config: ${{ fromJSON(github.ref_name == 'fongmi' && '[{"os":"ubuntu-24.04","target_arch":"arm"},{"os":"ubuntu-24.04","target_arch":"arm64"}]' || '[{"os":"ubuntu-24.04","target_arch":"arm"},{"os":"ubuntu-24.04","target_arch":"arm64"},{"os":"ubuntu-24.04","target_arch":"x86_64"}]') }}
 
     runs-on: ${{ matrix.config.os }}
     env:
@@ -172,6 +164,7 @@ jobs:
           path: out_android
 
   build-ios:
+    if: github.ref_name != 'fongmi'
     strategy:
       fail-fast: false
       matrix:
@@ -234,7 +227,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        flavor: [full, lite]
+        flavor: ${{ fromJSON(github.ref_name == 'fongmi' && '["lite"]' || '["full","lite"]') }}
     runs-on: ubuntu-24.04
     needs: build-android
     env:
@@ -259,8 +252,7 @@ jobs:
       - name: Combine
         run: |
           mkdir -p artifacts/bin artifacts/config artifacts/include
-          # Copy the per-abi binary dirs (armeabi-v7a/, arm64-v8a/, x86_64/),
-          # not the shared libnode/ header dir.
+          # Copy the per-abi binary dirs, not the shared libnode/ header dir.
           for d in out_android/*/; do
             [ "$(basename "$d")" = "libnode" ] && continue
             # strip the trailing slash so both GNU and BSD cp create bin/<abi>/
@@ -268,7 +260,11 @@ jobs:
           done
           cp -R out_android/libnode/config/* artifacts/config/
           cp -R out_android/libnode/include/* artifacts/include
-          for abi in armeabi-v7a arm64-v8a x86_64; do
+          abis="armeabi-v7a arm64-v8a"
+          if [ "$GITHUB_REF_NAME" != "fongmi" ]; then
+            abis="$abis x86_64"
+          fi
+          for abi in $abis; do
             test -f "artifacts/bin/$abi/libnode.so"
             test -f "artifacts/bin/$abi/libc++_shared.so"
             test -f "artifacts/config/$abi/config.gypi"
@@ -280,8 +276,8 @@ jobs:
           name: nodejs-mobile-android${{ env.FLAVOR_SUFFIX }}
           path: artifacts
 
-      # Delete only this flavor's per-arch artifacts so the other flavor's
-      # combine leg (running in parallel) can still find its inputs.
+      # Delete only this flavor's per-arch artifacts so another flavor's
+      # combine leg, when present, can still find its inputs.
       - uses: geekyeggo/delete-artifact@176a747ab7e287e3ff4787bf8a148716375ca118 # v6.0.0
         with:
           name: node-android-*-${{ matrix.flavor }}
@@ -293,10 +289,12 @@ jobs:
   napi-smoke-android:
     needs: combine-android
     runs-on: ubuntu-24.04
+    env:
+      FLAVOR_SUFFIX: ${{ github.ref_name == 'fongmi' && '-lite' || '' }}
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: nodejs-mobile-android
+          name: nodejs-mobile-android${{ env.FLAVOR_SUFFIX }}
           path: artifacts
 
       - name: Assert NAPI symbols are exported
@@ -372,9 +370,9 @@ jobs:
 
   # Tier 1 on-device smoke (doc_mobile/TEST_PLAN.md): boot an emulator, run a
   # console.log via the freshly built libnode, assert it ran and exited cleanly.
-  # Consumes the nodejs-mobile-android artifact, so it smoke-tests the exact
-  # binary that would ship — no rebuild. ubuntu + KVM keeps it at 1x billing.
+  # It requires the non-shipping x86_64 ABI, so the TV-only fongmi build skips it.
   smoke-android:
+    if: github.ref_name != 'fongmi'
     needs: combine-android
     strategy:
       fail-fast: false
